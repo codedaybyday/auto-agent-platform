@@ -1,0 +1,67 @@
+{
+  "skill_name": "mastergo-batch-analyzer",
+  "evals": [
+    {
+      "id": 1,
+      "name": "parse-all-modules-from-file-url",
+      "prompt": "帮我解析 MasterGo 文件 https://imd.sankuai.com/file/137265 的所有设计稿模块，需求目录是 fake-dish-min-order",
+      "expected_output": "解析 MasterGo URL，获取顶层模块列表，解析所有模块，生成 StyleSpec JSON 文件到 mg-specs 目录，输出汇总报告",
+      "files": [],
+      "assertions": [
+        {
+          "name": "解析 MasterGo URL",
+          "description": "应该正确解析 MasterGo 文件 URL 并导航到页面",
+          "check": "调用了 catdesk browser-action navigate 命令"
+        },
+        {
+          "name": "获取模块列表",
+          "description": "应该获取顶层模块列表并展示给用户",
+          "check": "输出了模块列表供用户选择"
+        },
+        {
+          "name": "生成 mg-specs 目录",
+          "description": "应该在需求目录下创建 mg-specs 文件夹",
+          "check": "创建了 .catpaw/docs/fake-dish-min-order/mg-specs/ 目录"
+        },
+        {
+          "name": "输出汇总报告",
+          "description": "应该输出解析结果汇总",
+          "check": "输出包含成功/失败统计的汇总报告"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "parse-selected-modules",
+      "prompt": "解析 MasterGo 文件 https://imd.sankuai.com/goto/RDNFo8LN，只解析前 2 个模块",
+      "expected_output": "处理 goto 短链接，获取模块列表，让用户选择前 2 个，解析并生成对应的 StyleSpec JSON",
+      "files": [],
+      "assertions": [
+        {
+          "name": "处理 goto 短链接",
+          "description": "应该正确处理 goto 短链接并获取真实 URL",
+          "check": "导航到 goto 链接后获取了真实 URL"
+        },
+        {
+          "name": "选择性解析",
+          "description": "应该只解析用户选择的模块",
+          "check": "只生成了 2 个 StyleSpec JSON 文件"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "custom-component-names",
+      "prompt": "解析 MasterGo 文件，模块 1 命名为 Header，模块 2 命名为 ProductList",
+      "expected_output": "应用用户指定的组件名，生成对应的 StyleSpec JSON 文件",
+      "files": [],
+      "assertions": [
+        {
+          "name": "应用自定义组件名",
+          "description": "应该使用用户指定的组件名而非自动生成",
+          "check": "生成的 JSON 文件名为 Header.json 和 ProductList.json"
+        }
+      ]
+    }
+  ]
+}
