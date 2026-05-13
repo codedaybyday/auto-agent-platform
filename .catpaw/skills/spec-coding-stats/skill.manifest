@@ -1,0 +1,8 @@
+skill-manifest-version: 1
+skill-id: 304134634b9c82097bdbce79ef1894aca1cb29539d5a89d684178fb04f0c46d8
+
+files:
+  8f7268e3576f56f5ddd6806e5749dc0783e02d1ef1e7900b9e34afe69e441e9b  SKILL.md
+  c29ce4573420dbd66c5413d01980eae04287285ce3bf2547f036280b7e9c86a9  references/README.md
+  2bdb9249d353f0c4d49feed4b9ec6b685f15861fd41ec70803a105e1bedf2c31  references/metrics.md
+  24b9b37be4532de9d2b6f71b68d1ab41c0c1f80a3d8676f2666c4208637cfa6c  references/spec-delete-line-design.md

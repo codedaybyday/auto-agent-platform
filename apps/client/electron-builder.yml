@@ -1,0 +1,42 @@
+appId: com.auto-agent.desktop
+productName: Auto Agent Desktop
+directories:
+  buildResources: build
+  output: release
+files:
+  - out/**
+  - "!out/renderer/**"
+extraResources:
+  - from: out/renderer
+    to: renderer
+mac:
+  target:
+    - target: dmg
+      arch:
+        - universal
+  artifactName: ${name}-${version}-${arch}.${ext}
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${name}-${version}-setup.${ext}
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  artifactName: ${name}-${version}-${arch}.${ext}
+  category: Utility

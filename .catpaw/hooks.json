@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "ai-coding-stats after-edit"
+      }
+    ],
+    "afterAgentResponse": [
+      {
+        "command": "node .catpaw/scripts/detect-issue-and-read-evolver.js"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "node .catpaw/scripts/detect-issue-and-read-evolver.js"
+      },
+      {
+        "command": "ai-coding-stats before-submit-prompt"
+      }
+    ],
+    "stop": [
+      {
+        "command": "node .catpaw/scripts/detect-issue-and-read-evolver.js"
+      }
+    ]
+  }
+}

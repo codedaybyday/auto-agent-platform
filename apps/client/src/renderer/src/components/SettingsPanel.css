@@ -1,0 +1,279 @@
+.settings-panel {
+  padding: 24px;
+  height: 100%;
+  overflow-y: auto;
+  background: #f9f9f9;
+}
+
+.settings-panel h2 {
+  margin: 0 0 24px;
+  font-size: 24px;
+  color: #333;
+  border-bottom: 2px solid #007AFF;
+  padding-bottom: 12px;
+}
+
+.setting-group {
+  margin-bottom: 32px;
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.setting-group label {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.setting-description {
+  margin: 0 0 16px;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.api-key-input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.api-key-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.api-key-input:focus {
+  outline: none;
+  border-color: #007AFF;
+}
+
+.toggle-visibility-btn {
+  width: 44px;
+  height: 44px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 18px;
+  transition: background 0.2s;
+}
+
+.toggle-visibility-btn:hover {
+  background: #f5f5f5;
+}
+
+.save-btn {
+  padding: 12px 24px;
+  background: #007AFF;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.save-btn:hover:not(:disabled) {
+  background: #0056CC;
+}
+
+.save-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.save-btn.saved {
+  background: #34C759;
+}
+
+.model-selection {
+  margin-bottom: 20px;
+}
+
+.model-select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  margin-bottom: 16px;
+}
+
+.model-select:focus {
+  outline: none;
+  border-color: #007AFF;
+}
+
+.model-info {
+  background: #f5f5f5;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.model-info p {
+  margin: 4px 0;
+  color: #555;
+}
+
+.model-info .model-desc {
+  color: #888;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.custom-config {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #f5f5f5;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.config-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 6px;
+}
+
+.config-field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.config-field input:focus {
+  outline: none;
+  border-color: #007AFF;
+}
+
+.config-field .required {
+  color: #FF4444;
+  margin-left: 4px;
+}
+
+.protocol-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.protocol-select:focus {
+  outline: none;
+  border-color: #007AFF;
+}
+
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #888;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.connection-status.connected {
+  background: rgba(52, 199, 89, 0.1);
+  color: #34C759;
+}
+
+.connection-status.disconnected {
+  background: rgba(255, 149, 0, 0.1);
+  color: #FF9500;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tool-item {
+  padding: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+}
+
+.tool-item-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.tool-item .tool-icon {
+  font-size: 24px;
+}
+
+.tool-item .tool-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.tool-description {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.tips-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #555;
+}
+
+.tips-list li {
+  margin-bottom: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.tips-list li:last-child {
+  margin-bottom: 0;
+}
