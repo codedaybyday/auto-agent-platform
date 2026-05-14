@@ -37,6 +37,9 @@ function App(): JSX.Element {
   const [sessions, setSessions] = useState<Session[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
 
+  // 会话消息缓存：sessionId -> Message[]
+  const [sessionMessagesCache, setSessionMessagesCache] = useState<Map<string, Message[]>>(new Map())
+
   useEffect(() => {
     // 初始化 Agent
     initializeAgent()
@@ -46,7 +49,18 @@ function App(): JSX.Element {
 
     // Setup event listeners
     const unsubscribeMessage = window.api.agent.onMessage((message: Message) => {
-      setMessages((prev) => [...prev, message])
+      setMessages((prev) => {
+        const newMessages = [...prev, message]
+        // 同步到缓存
+        if (currentSessionId) {
+          setSessionMessagesCache((cache) => {
+            const newCache = new Map(cache)
+            newCache.set(currentSessionId, newMessages)
+            return newCache
+          })
+        }
+        return newMessages
+      })
     })
 
     const unsubscribeProcessing = window.api.agent.onProcessing((processing: boolean) => {
@@ -118,8 +132,19 @@ function App(): JSX.Element {
   }
 
   const handleCreateSession = async () => {
+    // 保存当前会话的消息到缓存
+    if (currentSessionId) {
+      setSessionMessagesCache((cache) => {
+        const newCache = new Map(cache)
+        newCache.set(currentSessionId, messages)
+        return newCache
+      })
+    }
+
     const result = await window.api.agent.createSession()
     if (result.success) {
+      // 新会话为空消息列表
+      setMessages([])
       // 重新加载会话列表
       await loadSessions()
     } else {
@@ -128,10 +153,21 @@ function App(): JSX.Element {
   }
 
   const handleSwitchSession = async (sessionId: string) => {
+    // 先保存当前会话的消息到缓存
+    if (currentSessionId) {
+      setSessionMessagesCache((cache) => {
+        const newCache = new Map(cache)
+        newCache.set(currentSessionId, messages)
+        return newCache
+      })
+    }
+
     const result = await window.api.agent.switchSession(sessionId)
     if (result.success) {
       setCurrentSessionId(sessionId)
-      setMessages([])
+      // 从缓存加载目标会话的消息
+      const cachedMessages = sessionMessagesCache.get(sessionId) || []
+      setMessages(cachedMessages)
     } else {
       setError(result.error || '切换会话失败')
     }
@@ -140,9 +176,15 @@ function App(): JSX.Element {
   const handleDeleteSession = async (sessionId: string) => {
     const result = await window.api.agent.deleteSession(sessionId)
     if (result.success) {
+      // 从缓存中删除该会话的消息
+      setSessionMessagesCache((cache) => {
+        const newCache = new Map(cache)
+        newCache.delete(sessionId)
+        return newCache
+      })
       // 重新加载会话列表
       await loadSessions()
-      // 如果删除的是当前会话，清空当前会话ID
+      // 如果删除的是当前会话，清空当前会话ID和消息
       if (sessionId === currentSessionId) {
         setCurrentSessionId(null)
         setMessages([])
@@ -178,6 +220,14 @@ function App(): JSX.Element {
     const result = await window.api.agent.clearHistory()
     if (result.success) {
       setMessages([])
+      // 同时清空缓存中的当前会话消息
+      if (currentSessionId) {
+        setSessionMessagesCache((cache) => {
+          const newCache = new Map(cache)
+          newCache.set(currentSessionId, [])
+          return newCache
+        })
+      }
     }
   }
 
