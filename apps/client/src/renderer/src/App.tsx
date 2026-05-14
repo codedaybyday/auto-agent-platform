@@ -103,13 +103,13 @@ function App(): JSX.Element {
       setError(null)
     } else {
       setIsConnected(false)
-      setError(result.error || 'Failed to initialize agent')
+      setError(result.error || '初始化 Agent 失败')
     }
   }
 
   const handleSendMessage = async (content: string) => {
     if (!isConnected) {
-      setError('Please configure API key and model in settings first')
+      setError('请先在设置中配置 API 密钥和模型')
       setActiveTab('settings')
       return
     }
@@ -117,7 +117,7 @@ function App(): JSX.Element {
     setError(null)
     const result = await window.api.agent.sendMessage(content)
     if (!result.success) {
-      setError(result.error || 'Failed to send message')
+      setError(result.error || '发送消息失败')
     }
   }
 
@@ -149,7 +149,7 @@ function App(): JSX.Element {
             onClick={() => setActiveTab('chat')}
           >
             <span className="nav-icon">💬</span>
-            <span>Chat</span>
+            <span>对话</span>
             {isProcessing && <span className="nav-indicator">●</span>}
           </button>
 
@@ -158,7 +158,7 @@ function App(): JSX.Element {
             onClick={() => setActiveTab('settings')}
           >
             <span className="nav-icon">⚙️</span>
-            <span>Settings</span>
+            <span>设置</span>
             {!isConnected && <span className="nav-warning">⚠️</span>}
           </button>
         </nav>
@@ -166,7 +166,7 @@ function App(): JSX.Element {
         <div className="sidebar-footer">
           <div className={`connection-dot ${isConnected ? 'connected' : 'disconnected'}`} />
           <span className="connection-text">
-            {isConnected ? modelConfig.name : 'Not Connected'}
+            {isConnected ? modelConfig.name : '未连接'}
           </span>
         </div>
       </aside>

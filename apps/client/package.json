@@ -19,7 +19,8 @@
   "dependencies": {
     "@auto-agent/shared-types": "workspace:*",
     "@electron-toolkit/preload": "^2.0.0",
-    "@electron-toolkit/utils": "^2.0.1"
+    "@electron-toolkit/utils": "^2.0.1",
+    "playwright": "^1.45.0"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",

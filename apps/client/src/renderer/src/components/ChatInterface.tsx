@@ -56,7 +56,7 @@ function ToolResultDisplay({ result }: { result: ToolResult }): JSX.Element {
     <div className={`tool-result ${result.is_error ? 'error' : ''}`}>
       <div className="tool-result-header">
         <span className="tool-icon">{result.is_error ? '❌' : '✅'}</span>
-        <span className="tool-result-label">Result</span>
+        <span className="tool-result-label">结果</span>
       </div>
       <div className="tool-result-content">
         <pre>{result.content}</pre>
@@ -71,7 +71,7 @@ function MessageBubble({ message }: { message: Message }): JSX.Element {
   return (
     <div className={`message-bubble ${isUser ? 'user' : 'assistant'}`}>
       <div className="message-header">
-        <span className="message-role">{isUser ? '👤 You' : '🤖 Assistant'}</span>
+        <span className="message-role">{isUser ? '👤 你' : '🤖 助手'}</span>
         <span className="message-time">{formatTime(message.timestamp)}</span>
       </div>
 
@@ -145,11 +145,11 @@ export function ChatInterface({
   return (
     <div className="chat-interface">
       <div className="chat-header">
-        <h2>Agent Conversation</h2>
+        <h2>Agent 对话</h2>
         <div className="chat-actions">
-          {isProcessing && <span className="processing-indicator">Thinking...</span>}
+          {isProcessing && <span className="processing-indicator">思考中...</span>}
           <button className="clear-btn" onClick={onClearHistory} disabled={isProcessing}>
-            Clear History
+            清除历史
           </button>
         </div>
       </div>
@@ -158,13 +158,13 @@ export function ChatInterface({
         {messages.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">🤖</div>
-            <h3>Welcome to Auto Agent</h3>
-            <p>Start a conversation with the AI assistant.</p>
-            <p>You can ask it to:</p>
+            <h3>欢迎使用 Auto Agent</h3>
+            <p>开始与 AI 助手对话。</p>
+            <p>你可以让它：</p>
             <ul>
-              <li>Execute bash commands</li>
-              <li>Control a browser</li>
-              <li>Perform complex tasks autonomously</li>
+              <li>执行 bash 命令</li>
+              <li>控制浏览器</li>
+              <li>自主执行复杂任务</li>
             </ul>
           </div>
         ) : (
@@ -182,7 +182,7 @@ export function ChatInterface({
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="Type your message... (Press Enter to send, Shift+Enter for new line)"
+            placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)"
             disabled={isProcessing}
             rows={1}
           />
