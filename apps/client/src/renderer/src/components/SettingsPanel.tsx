@@ -251,7 +251,7 @@ export function SettingsPanel({
           <div className="tool-item">
             <div className="tool-item-header">
               <span className="tool-icon">🖥️</span>
-              <span className="tool-name">Bash</span>
+              <span className="tool-name">终端</span>
             </div>
             <p className="tool-description">
               在本地系统执行 bash 命令。可以浏览目录、运行脚本、查看文件等。
@@ -261,7 +261,7 @@ export function SettingsPanel({
           <div className="tool-item">
             <div className="tool-item-header">
               <span className="tool-icon">🌐</span>
-              <span className="tool-name">Browser</span>
+              <span className="tool-name">浏览器</span>
             </div>
             <p className="tool-description">
               控制浏览器访问网页、点击元素、输入文字、截图、提取信息等。

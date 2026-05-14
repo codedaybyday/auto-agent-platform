@@ -24,4 +24,3 @@
   "include": ["src/**/*"],
   "exclude": ["node_modules", "out", "dist"]
 }
-</parameter name="file_path">
