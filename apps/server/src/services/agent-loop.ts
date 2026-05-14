@@ -48,12 +48,13 @@ export class AgentLoop extends EventEmitter {
       messages: []
     }
     this.config = {
+      baseURL: config.baseURL,
       maxIterations: config.maxIterations || 50,
-      model: config.model || 'claude-3-5-sonnet-20241022',
+      model: config.model || 'gpt-4',
       systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
     }
     this.toolBridge = new ToolBridge(sessionId, userId)
-    this.llmClient = new LLMClient(this.config.model)
+    this.llmClient = new LLMClient({ model: this.config.model, baseURL: config.baseURL})
   }
 
   /**

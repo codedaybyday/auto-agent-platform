@@ -57,7 +57,7 @@ export class WebSocketGateway {
           // 第一个消息必须是认证
           if (message.type === 'connect') {
             clearTimeout(authTimeout)
-            this.handleAuth(tempConnection as WSConnection, message)
+            this.handleAuth(tempConnection, message)
           } else if (tempConnection.id) {
             // 已认证，处理消息
             this.handleMessage(tempConnection as WSConnection, message)
@@ -99,13 +99,13 @@ export class WebSocketGateway {
   /**
    * 处理认证
    */
-  private handleAuth(connection: WSConnection, message: WSMessage): void {
+  private handleAuth(tempConnection: Partial<WSConnection>, message: WSMessage): void {
     const { userId, authToken } = message.payload || {}
 
     // TODO: 验证 authToken
     // 简化版：直接信任客户端提供的 userId
     if (!userId) {
-      connection.socket.close(4003, 'Missing userId')
+      tempConnection.socket!.close(4003, 'Missing userId')
       return
     }
 
@@ -113,12 +113,15 @@ export class WebSocketGateway {
     const conn: WSConnection = {
       id: connectionId,
       userId,
-      socket: connection.socket,
+      socket: tempConnection.socket!,
       connectedAt: new Date(),
       lastPingAt: new Date(),
       isAlive: true,
       subscriptions: new Set()
     }
+
+    // 更新 tempConnection，使后续消息处理能识别已认证状态
+    Object.assign(tempConnection, conn)
 
     this.connections.set(connectionId, conn)
 

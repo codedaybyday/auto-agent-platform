@@ -8,6 +8,7 @@ export interface AgentLoopConfig {
   maxIterations: number
   model: string
   systemPrompt: string
+  baseURL?: string
 }
 
 export interface LoopState {
