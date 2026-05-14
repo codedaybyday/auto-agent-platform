@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { ChatInterface } from './components/ChatInterface'
 import { SettingsPanel } from './components/SettingsPanel'
+import { SessionPanel } from './components/SessionPanel'
+import type { Session } from './components/SessionPanel'
 import './App.css'
 
 interface ToolCall {
@@ -31,9 +33,16 @@ function App(): JSX.Element {
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 多会话状态
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+
   useEffect(() => {
-    // 初始化 Agent（服务端已配置模型）
+    // 初始化 Agent
     initializeAgent()
+
+    // 加载会话列表
+    loadSessions()
 
     // Setup event listeners
     const unsubscribeMessage = window.api.agent.onMessage((message: Message) => {
@@ -56,17 +65,29 @@ function App(): JSX.Element {
       setMessages([])
     })
 
+    // 监听会话列表更新
+    const unsubscribeSessionsUpdated = window.api.agent.onSessionsUpdated((updatedSessions: Session[]) => {
+      setSessions(updatedSessions)
+    })
+
+    // 监听会话切换
+    const unsubscribeSessionSwitched = window.api.agent.onSessionSwitched((sessionId: string) => {
+      setCurrentSessionId(sessionId)
+      setMessages([]) // 清空消息显示
+    })
+
     return () => {
       unsubscribeMessage()
       unsubscribeProcessing()
       unsubscribeToolStart()
       unsubscribeToolResult()
       unsubscribeHistoryCleared()
+      unsubscribeSessionsUpdated()
+      unsubscribeSessionSwitched()
     }
   }, [])
 
   const initializeAgent = async () => {
-    // 服务端已配置模型，前端无需传递 apiKey 和 modelConfig
     const result = await window.api.agent.init({
       apiKey: '',
       modelConfig: {
@@ -80,13 +101,72 @@ function App(): JSX.Element {
     if (result.success) {
       setIsConnected(true)
       setError(null)
+      if (result.sessionId) {
+        setCurrentSessionId(result.sessionId)
+      }
     } else {
       setIsConnected(false)
       setError(result.error || '初始化 Agent 失败')
     }
   }
 
+  const loadSessions = async () => {
+    const result = await window.api.agent.getSessions()
+    if (result.success && result.sessions) {
+      setSessions(result.sessions)
+    }
+  }
+
+  const handleCreateSession = async () => {
+    const result = await window.api.agent.createSession()
+    if (result.success) {
+      // 重新加载会话列表
+      await loadSessions()
+    } else {
+      setError(result.error || '创建会话失败')
+    }
+  }
+
+  const handleSwitchSession = async (sessionId: string) => {
+    const result = await window.api.agent.switchSession(sessionId)
+    if (result.success) {
+      setCurrentSessionId(sessionId)
+      setMessages([])
+    } else {
+      setError(result.error || '切换会话失败')
+    }
+  }
+
+  const handleDeleteSession = async (sessionId: string) => {
+    const result = await window.api.agent.deleteSession(sessionId)
+    if (result.success) {
+      // 重新加载会话列表
+      await loadSessions()
+      // 如果删除的是当前会话，清空当前会话ID
+      if (sessionId === currentSessionId) {
+        setCurrentSessionId(null)
+        setMessages([])
+      }
+    } else {
+      setError(result.error || '删除会话失败')
+    }
+  }
+
+  const handleRenameSession = async (sessionId: string, title: string) => {
+    const result = await window.api.agent.renameSession(sessionId, title)
+    if (result.success) {
+      // 重新加载会话列表
+      await loadSessions()
+    } else {
+      setError(result.error || '重命名会话失败')
+    }
+  }
+
   const handleSendMessage = async (content: string) => {
+    if (!currentSessionId) {
+      setError('请先创建或选择一个会话')
+      return
+    }
     setError(null)
     const result = await window.api.agent.sendMessage(content)
     if (!result.success) {
@@ -103,6 +183,16 @@ function App(): JSX.Element {
 
   return (
     <div className="app">
+      {/* 左侧会话面板 */}
+      <SessionPanel
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSwitchSession={handleSwitchSession}
+        onCreateSession={handleCreateSession}
+        onDeleteSession={handleDeleteSession}
+        onRenameSession={handleRenameSession}
+      />
+
       <aside className="sidebar">
         <div className="sidebar-header">
           <h1>🤖 Auto Agent</h1>
