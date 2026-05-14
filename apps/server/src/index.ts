@@ -188,7 +188,7 @@ app.post('/api/sessions/:sessionId/chat', authMiddleware, async (req: AuthReques
     // 非流式：等待完整响应
     let response = ''
     let isComplete = false
-    let error: Error | null = null
+    let error: any = null
 
     agentLoop.on('stream_chunk', (data) => {
       if (data.content) {

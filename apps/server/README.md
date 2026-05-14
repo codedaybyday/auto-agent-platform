@@ -183,5 +183,30 @@ LLM 再次思考（循环）
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `PORT` | 服务端口 | `3000` |
-| `ANTHROPIC_API_KEY` | Claude API Key | - |
+| `LLM_API_KEY` | OpenAI API Key | - |
+| `LLM_BASE_URL` | API 基础地址 | `https://api.openai.com/v1` |
+| `LLM_MODEL` | 模型名称 | `gpt-4` |
 | `NODE_ENV` | 运行环境 | `development` |
+
+### 支持的服务商
+
+**OpenAI:**
+```bash
+LLM_API_KEY=sk-...
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4
+```
+
+**千问（阿里）:**
+```bash
+LLM_API_KEY=sk-...
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen-max
+```
+
+**DeepSeek:**
+```bash
+LLM_API_KEY=sk-...
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+```

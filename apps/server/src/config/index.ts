@@ -3,13 +3,19 @@
  */
 
 import dotenv from 'dotenv'
+import { resolve } from 'path'
+import { fileURLToPath } from 'url'
 
-dotenv.config()
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
+
+// 加载 .env 文件（从项目根目录或当前目录）
+dotenv.config({ path: resolve(__dirname, '../../.env') })
+dotenv.config({ path: resolve(process.cwd(), '.env') })
 
 export const config = {
   port: parseInt(process.env.PORT || '3000'),
 
-  // JWT 配置
+  // JWT 配置（TODO: 接入外部登录系统）
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key',
     expiresIn: process.env.JWT_EXPIRES_IN || '7d'
@@ -25,10 +31,10 @@ export const config = {
     url: process.env.REDIS_URL || 'redis://localhost:6379'
   },
 
-  // LLM 默认配置（服务端用，用户不可见）
+  // LLM 配置（支持 OpenAI 兼容格式）
   llm: {
-    defaultModel: process.env.DEFAULT_MODEL || 'claude-3-5-sonnet-20241022',
-    defaultBaseURL: process.env.DEFAULT_BASE_URL || 'https://api.anthropic.com',
-    apiKey: process.env.LLM_API_KEY || ''
+    model: process.env.LLM_MODEL || 'gpt-4',
+    apiKey: process.env.LLM_API_KEY || '',
+    baseURL: process.env.LLM_BASE_URL || 'https://api.openai.com/v1'
   }
 }

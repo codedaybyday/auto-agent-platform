@@ -16,7 +16,6 @@
   "dependencies": {
     "@auto-agent/shared-types": "workspace:*",
     "@auto-agent/shared-utils": "workspace:*",
-    "@anthropic-ai/sdk": "^0.24.0",
     "express": "^4.19.0",
     "ws": "^8.17.0",
     "cors": "^2.8.5",

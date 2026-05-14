@@ -3,7 +3,7 @@
  * 工具代理层：判断工具在哪里执行并路由到正确的执行器
  */
 
-import type { ToolCall, ToolResult, ToolType, WSConnection } from '../types/index.js'
+import { ToolType, type ToolCall, type ToolResult, type WSConnection } from '../types/index.js'
 
 interface ToolExecuteRequest {
   toolCall: ToolCall
@@ -46,9 +46,9 @@ export class ToolBridge {
     const localTools = ['browser', 'bash', 'file_read', 'file_write']
     const remoteTools = ['http_request', 'search_api', 'weather']
 
-    if (localTools.includes(toolName)) return 'local'
-    if (remoteTools.includes(toolName)) return 'remote'
-    return 'hybrid'
+    if (localTools.includes(toolName)) return ToolType.LOCAL
+    if (remoteTools.includes(toolName)) return ToolType.REMOTE
+    return ToolType.HYBRID
   }
 
   /**
@@ -58,11 +58,11 @@ export class ToolBridge {
     const toolType = this.classifyTool(toolCall.name)
 
     switch (toolType) {
-      case 'local':
+      case ToolType.LOCAL:
         return this.executeLocalTool(toolCall)
-      case 'remote':
+      case ToolType.REMOTE:
         return this.executeRemoteTool(toolCall)
-      case 'hybrid':
+      case ToolType.HYBRID:
         // 优先尝试本地，如果客户端不在线则回退到远程
         if (this.wsClient?.isAlive) {
           return this.executeLocalTool(toolCall)
