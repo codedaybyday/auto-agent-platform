@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChatInterface } from './components/ChatInterface'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SessionPanel } from './components/SessionPanel'
@@ -29,6 +29,12 @@ interface Message {
 function App(): JSX.Element {
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat')
   const [messages, setMessages] = useState<Message[]>([])
+  const messagesRef = useRef<Message[]>([])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
   const [isProcessing, setIsProcessing] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,9 +42,20 @@ function App(): JSX.Element {
   // 多会话状态
   const [sessions, setSessions] = useState<Session[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const currentSessionIdRef = useRef<string | null>(null)
 
   // 会话消息缓存：sessionId -> Message[]
   const [sessionMessagesCache, setSessionMessagesCache] = useState<Map<string, Message[]>>(new Map())
+  const sessionMessagesCacheRef = useRef<Map<string, Message[]>>(new Map())
+
+  // 同步 ref 和 state
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId
+  }, [currentSessionId])
+
+  useEffect(() => {
+    sessionMessagesCacheRef.current = sessionMessagesCache
+  }, [sessionMessagesCache])
 
   useEffect(() => {
     // 初始化 Agent
@@ -51,13 +68,13 @@ function App(): JSX.Element {
     const unsubscribeMessage = window.api.agent.onMessage((message: Message) => {
       setMessages((prev) => {
         const newMessages = [...prev, message]
-        // 同步到缓存
-        if (currentSessionId) {
-          setSessionMessagesCache((cache) => {
-            const newCache = new Map(cache)
-            newCache.set(currentSessionId, newMessages)
-            return newCache
-          })
+        // 使用 ref 获取最新的会话 ID，避免闭包问题
+        const activeSessionId = currentSessionIdRef.current
+        if (activeSessionId) {
+          const newCache = new Map(sessionMessagesCacheRef.current)
+          newCache.set(activeSessionId, newMessages)
+          sessionMessagesCacheRef.current = newCache
+          setSessionMessagesCache(newCache)
         }
         return newMessages
       })
@@ -132,13 +149,15 @@ function App(): JSX.Element {
   }
 
   const handleCreateSession = async () => {
-    // 保存当前会话的消息到缓存
-    if (currentSessionId) {
-      setSessionMessagesCache((cache) => {
-        const newCache = new Map(cache)
-        newCache.set(currentSessionId, messages)
-        return newCache
-      })
+    // 保存当前会话的消息到缓存（使用 ref 获取最新值）
+    const activeSessionId = currentSessionIdRef.current
+    if (activeSessionId) {
+      // 使用 messagesRef 获取最新的消息列表
+      const currentMessages = messagesRef.current
+      const newCache = new Map(sessionMessagesCacheRef.current)
+      newCache.set(activeSessionId, currentMessages)
+      sessionMessagesCacheRef.current = newCache
+      setSessionMessagesCache(newCache)
     }
 
     const result = await window.api.agent.createSession()
@@ -153,20 +172,22 @@ function App(): JSX.Element {
   }
 
   const handleSwitchSession = async (sessionId: string) => {
-    // 先保存当前会话的消息到缓存
-    if (currentSessionId) {
-      setSessionMessagesCache((cache) => {
-        const newCache = new Map(cache)
-        newCache.set(currentSessionId, messages)
-        return newCache
-      })
+    // 先保存当前会话的消息到缓存（使用 ref 获取最新值）
+    const activeSessionId = currentSessionIdRef.current
+    if (activeSessionId) {
+      // 使用 messagesRef 获取最新的消息列表
+      const currentMessages = messagesRef.current
+      const newCache = new Map(sessionMessagesCacheRef.current)
+      newCache.set(activeSessionId, currentMessages)
+      sessionMessagesCacheRef.current = newCache
+      setSessionMessagesCache(newCache)
     }
 
     const result = await window.api.agent.switchSession(sessionId)
     if (result.success) {
       setCurrentSessionId(sessionId)
-      // 从缓存加载目标会话的消息
-      const cachedMessages = sessionMessagesCache.get(sessionId) || []
+      // 从 ref 加载目标会话的消息
+      const cachedMessages = sessionMessagesCacheRef.current.get(sessionId) || []
       setMessages(cachedMessages)
     } else {
       setError(result.error || '切换会话失败')
@@ -177,15 +198,14 @@ function App(): JSX.Element {
     const result = await window.api.agent.deleteSession(sessionId)
     if (result.success) {
       // 从缓存中删除该会话的消息
-      setSessionMessagesCache((cache) => {
-        const newCache = new Map(cache)
-        newCache.delete(sessionId)
-        return newCache
-      })
+      const newCache = new Map(sessionMessagesCacheRef.current)
+      newCache.delete(sessionId)
+      sessionMessagesCacheRef.current = newCache
+      setSessionMessagesCache(newCache)
       // 重新加载会话列表
       await loadSessions()
       // 如果删除的是当前会话，清空当前会话ID和消息
-      if (sessionId === currentSessionId) {
+      if (sessionId === currentSessionIdRef.current) {
         setCurrentSessionId(null)
         setMessages([])
       }
@@ -220,13 +240,13 @@ function App(): JSX.Element {
     const result = await window.api.agent.clearHistory()
     if (result.success) {
       setMessages([])
-      // 同时清空缓存中的当前会话消息
-      if (currentSessionId) {
-        setSessionMessagesCache((cache) => {
-          const newCache = new Map(cache)
-          newCache.set(currentSessionId, [])
-          return newCache
-        })
+      // 同时清空缓存中的当前会话消息（使用 ref）
+      const activeSessionId = currentSessionIdRef.current
+      if (activeSessionId) {
+        const newCache = new Map(sessionMessagesCacheRef.current)
+        newCache.set(activeSessionId, [])
+        sessionMessagesCacheRef.current = newCache
+        setSessionMessagesCache(newCache)
       }
     }
   }
