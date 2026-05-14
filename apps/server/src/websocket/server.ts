@@ -234,7 +234,8 @@ export class WebSocketGateway {
    * 运行 Agent
    */
   private async handleAgentRun(connection: WSConnection, message: WSMessage): Promise<void> {
-    const { sessionId, content } = message.payload || {}
+    const sessionId = message.sessionId || message.payload?.sessionId
+    const { content } = message.payload || {}
 
     if (!content) {
       throw new Error('Missing content')
@@ -249,6 +250,13 @@ export class WebSocketGateway {
     if (sessionId) {
       connection.subscriptions.add(sessionId)
     }
+
+    // 清除旧的事件监听，避免重复绑定
+    agentLoop.removeAllListeners('stream_chunk')
+    agentLoop.removeAllListeners('tool_start')
+    agentLoop.removeAllListeners('tool_end')
+    agentLoop.removeAllListeners('run_complete')
+    agentLoop.removeAllListeners('run_error')
 
     // 设置事件监听
     agentLoop.on('stream_chunk', (data) => {
@@ -322,7 +330,7 @@ export class WebSocketGateway {
    * 暂停 Agent
    */
   private async handleAgentPause(connection: WSConnection, message: WSMessage): Promise<void> {
-    const { sessionId } = message.payload || {}
+    const sessionId = message.sessionId || message.payload?.sessionId
     const agentLoop = this.sessionManager.getAgentLoop(sessionId)
 
     if (agentLoop) {
@@ -334,7 +342,7 @@ export class WebSocketGateway {
    * 停止 Agent
    */
   private async handleAgentStop(connection: WSConnection, message: WSMessage): Promise<void> {
-    const { sessionId } = message.payload || {}
+    const sessionId = message.sessionId || message.payload?.sessionId
     const agentLoop = this.sessionManager.getAgentLoop(sessionId)
 
     if (agentLoop) {
