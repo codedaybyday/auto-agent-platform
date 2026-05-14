@@ -5,9 +5,9 @@
   "description": "Auto Agent Platform - Multi-model AI Agent with tools",
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev --parallel",
-    "dev:client": "turbo run dev --filter=client",
-    "dev:server": "turbo run dev --filter=server",
+    "dev": "turbo run dev",
+    "dev:client": "turbo run dev --filter=@auto-agent/client",
+    "dev:server": "turbo run dev --filter=@auto-agent/server",
     "lint": "turbo run lint",
     "format": "prettier --write .",
     "type-check": "turbo run type-check",

@@ -1,0 +1,271 @@
+/**
+ * Agent Loop 服务
+ * 核心 ReAct (Reasoning + Acting) 循环实现
+ */
+
+import EventEmitter from 'events'
+import type {
+  AgentLoopConfig,
+  LoopState,
+  Message,
+  ToolCall,
+  ToolResult,
+  LLMResponse,
+  AgentError
+} from '../types/index.js'
+import { ToolBridge } from './tool-bridge.js'
+import { LLMClient } from './llm-client.js'
+
+export interface AgentLoopEvents {
+  'run_start': { input: string; timestamp: number }
+  'run_complete': { output: string; timestamp: number }
+  'run_error': { error: Error; timestamp: number }
+  'run_paused': { timestamp: number }
+  'iteration_start': { iteration: number; timestamp: number }
+  'tool_start': { toolCall: ToolCall; timestamp: number }
+  'tool_end': { toolCall: ToolCall; result: ToolResult; timestamp: number }
+  'stream_chunk': { content?: string; reasoning?: string }
+}
+
+export class AgentLoop extends EventEmitter {
+  private state: LoopState
+  private config: AgentLoopConfig
+  private toolBridge: ToolBridge
+  private llmClient: LLMClient
+  private userId: string
+
+  constructor(
+    sessionId: string,
+    userId: string,
+    config: Partial<AgentLoopConfig> = {}
+  ) {
+    super()
+    this.userId = userId
+    this.state = {
+      sessionId,
+      status: 'idle',
+      iteration: 0,
+      messages: []
+    }
+    this.config = {
+      maxIterations: config.maxIterations || 50,
+      model: config.model || 'claude-3-5-sonnet-20241022',
+      systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
+    }
+    this.toolBridge = new ToolBridge(sessionId, userId)
+    this.llmClient = new LLMClient(this.config.model)
+  }
+
+  /**
+   * 核心循环：ReAct 范式
+   * Observation -> Thought -> Action -> (Repeat)
+   */
+  async run(userInput: string): Promise<void> {
+    // 初始化
+    this.state.status = 'running'
+    this.state.iteration = 0
+    this.addMessage({
+      id: this.generateId(),
+      role: 'user',
+      content: userInput,
+      timestamp: Date.now()
+    })
+
+    this.emit('run_start', { input: userInput, timestamp: Date.now() })
+
+    try {
+      // ========== LOOP START ==========
+      while (this.state.iteration < this.config.maxIterations) {
+        this.state.iteration++
+
+        this.emit('iteration_start', {
+          iteration: this.state.iteration,
+          timestamp: Date.now()
+        })
+
+        // Step 1: Observation（构建上下文）
+        const context = this.buildContext()
+
+        // Step 2: Thought（LLM 思考）
+        const llmResponse = await this.callLLM(context)
+
+        // Step 3: 判断是 Action 还是 Final Answer
+        if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
+          // 需要执行工具（Action）
+          this.state.status = 'waiting_tool'
+
+          for (const toolCall of llmResponse.toolCalls) {
+            // 通知前端工具开始执行
+            this.emit('tool_start', {
+              toolCall,
+              timestamp: Date.now()
+            })
+
+            // 执行工具（可能走 WebSocket 到客户端）
+            const result = await this.executeTool(toolCall)
+
+            // 添加工具结果到上下文（Observation）
+            this.addToolResult(toolCall, result)
+
+            // 通知前端工具执行完成
+            this.emit('tool_end', {
+              toolCall,
+              result,
+              timestamp: Date.now()
+            })
+          }
+
+          // LOOP CONTINUE: 带着工具结果继续循环
+          continue
+        } else {
+          // 得到最终答案，结束循环
+          this.addMessage({
+            id: this.generateId(),
+            role: 'assistant',
+            content: llmResponse.content || '',
+            timestamp: Date.now()
+          })
+          this.state.status = 'completed'
+          this.emit('run_complete', {
+            output: llmResponse.content || '',
+            timestamp: Date.now()
+          })
+          break
+        }
+      }
+      // ========== LOOP END ==========
+
+      // 超过最大迭代次数
+      if (this.state.iteration >= this.config.maxIterations) {
+        this.state.status = 'error'
+        const error = new Error('思考次数过多，请简化问题')
+        this.emit('run_error', { error, timestamp: Date.now() })
+        throw error
+      }
+    } catch (error) {
+      this.state.status = 'error'
+      this.emit('run_error', {
+        error: error instanceof Error ? error : new Error(String(error)),
+        timestamp: Date.now()
+      })
+      throw error
+    }
+  }
+
+  /**
+   * 暂停循环
+   */
+  pause(): void {
+    if (this.state.status === 'running') {
+      this.state.status = 'paused'
+      this.emit('run_paused', { timestamp: Date.now() })
+    }
+  }
+
+  /**
+   * 恢复循环
+   */
+  resume(): void {
+    if (this.state.status === 'paused') {
+      this.state.status = 'running'
+      // 继续执行...
+      // 实际实现需要保存上下文并恢复
+    }
+  }
+
+  /**
+   * 停止循环
+   */
+  stop(): void {
+    this.state.status = 'completed'
+  }
+
+  /**
+   * 获取当前状态
+   */
+  getState(): LoopState {
+    return { ...this.state }
+  }
+
+  /**
+   * 获取历史消息
+   */
+  getMessages(): Message[] {
+    return [...this.state.messages]
+  }
+
+  /**
+   * 绑定 WebSocket 客户端（用于工具调用）
+   */
+  bindWebSocket(wsClient: any): void {
+    this.toolBridge.bindWebSocket(wsClient)
+  }
+
+  private getDefaultSystemPrompt(): string {
+    return `你是一个智能助手，可以帮助用户完成各种任务。
+你可以使用以下工具：
+- browser: 控制浏览器访问网页、点击元素、输入文字、截图等
+- bash: 执行系统命令
+- file_read/file_write: 读写本地文件
+
+请根据用户的需求决定是否需要使用工具。
+如果需要使用工具，请明确调用；如果可以直接回答，请直接回答。`
+  }
+
+  private buildContext(): Message[] {
+    const systemMessage: Message = {
+      id: 'system',
+      role: 'system',
+      content: this.config.systemPrompt,
+      timestamp: Date.now()
+    }
+    return [systemMessage, ...this.state.messages]
+  }
+
+  private async callLLM(messages: Message[]): Promise<LLMResponse> {
+    // 调用 LLM
+    const response = await this.llmClient.chat(messages)
+
+    // 添加助手消息到历史
+    if (response.content || response.toolCalls) {
+      this.addMessage({
+        id: this.generateId(),
+        role: 'assistant',
+        content: response.content || '',
+        toolCalls: response.toolCalls,
+        timestamp: Date.now()
+      })
+
+      // 流式输出
+      if (response.content) {
+        this.emit('stream_chunk', { content: response.content })
+      }
+    }
+
+    return response
+  }
+
+  private async executeTool(toolCall: ToolCall): Promise<ToolResult> {
+    return this.toolBridge.execute(toolCall)
+  }
+
+  private addMessage(message: Message): void {
+    this.state.messages.push(message)
+  }
+
+  private addToolResult(toolCall: ToolCall, result: ToolResult): void {
+    this.state.messages.push({
+      id: this.generateId(),
+      role: 'tool',
+      content: result.success
+        ? JSON.stringify(result.data)
+        : `Error: ${result.error}`,
+      toolResults: [result],
+      timestamp: Date.now()
+    })
+  }
+
+  private generateId(): string {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  }
+}
