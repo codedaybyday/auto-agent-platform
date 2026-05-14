@@ -361,6 +361,169 @@ function setupAgentHandlers(): void {
       }
     }
   })
+
+  // 本地会话存储（简化版，实际应该从服务端获取）
+  const sessions: Map<string, { id: string; title: string; updatedAt: number; messageCount: number }> = new Map()
+
+  // 获取会话列表
+  ipcMain.handle('agent:get_sessions', async () => {
+    try {
+      // 从服务端获取会话列表
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return { success: false, error: 'Not connected to server' }
+      }
+
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          resolve({ success: true, sessions: Array.from(sessions.values()) })
+        }, 1000)
+
+        // 发送获取会话列表请求
+        ws!.send(JSON.stringify({
+          type: 'session.list',
+          messageId: generateId(),
+          timestamp: Date.now()
+        }))
+
+        // 临时监听响应
+        const handler = (data: Buffer) => {
+          try {
+            const message = JSON.parse(data.toString())
+            if (message.type === 'state.sync' && message.payload?.sessions) {
+              clearTimeout(timeout)
+              ws!.off('message', handler)
+              // 更新本地缓存
+              for (const session of message.payload.sessions) {
+                sessions.set(session.id, {
+                  id: session.id,
+                  title: session.title || `会话 ${sessions.size + 1}`,
+                  updatedAt: new Date(session.updatedAt).getTime(),
+                  messageCount: session.messages?.length || 0
+                })
+              }
+              resolve({ success: true, sessions: Array.from(sessions.values()) })
+            }
+          } catch {
+            // ignore
+          }
+        }
+        ws!.on('message', handler)
+      })
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  // 创建新会话
+  ipcMain.handle('agent:create_session', async () => {
+    try {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return { success: false, error: 'Not connected to server' }
+      }
+
+      const sessionPromise = new Promise<string>((resolve, reject) => {
+        pendingSessionResolve = resolve
+        setTimeout(() => {
+          if (pendingSessionResolve === resolve) {
+            pendingSessionResolve = null
+            reject(new Error('Session creation timeout'))
+          }
+        }, 10000)
+      })
+
+      ws.send(JSON.stringify({
+        type: 'session.create',
+        messageId: generateId(),
+        timestamp: Date.now(),
+        payload: {}
+      }))
+
+      const sessionId = await sessionPromise
+      currentSessionId = sessionId
+
+      // 通知渲染进程切换会话
+      mainWindow?.webContents.send('agent:session_switched', sessionId)
+
+      return { success: true, sessionId }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  // 切换会话
+  ipcMain.handle('agent:switch_session', async (_event, sessionId: string) => {
+    try {
+      currentSessionId = sessionId
+
+      // 清空当前消息显示
+      mainWindow?.webContents.send('agent:history_cleared')
+
+      // 通知渲染进程切换会话
+      mainWindow?.webContents.send('agent:session_switched', sessionId)
+
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  // 删除会话
+  ipcMain.handle('agent:delete_session', async (_event, sessionId: string) => {
+    try {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return { success: false, error: 'Not connected to server' }
+      }
+
+      // 从本地缓存删除
+      sessions.delete(sessionId)
+
+      // 如果删除的是当前会话，清空当前会话
+      if (currentSessionId === sessionId) {
+        currentSessionId = null
+        mainWindow?.webContents.send('agent:history_cleared')
+      }
+
+      // 通知渲染进程更新会话列表
+      mainWindow?.webContents.send('agent:sessions_updated', Array.from(sessions.values()))
+
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  // 重命名会话
+  ipcMain.handle('agent:rename_session', async (_event, sessionId: string, title: string) => {
+    try {
+      const session = sessions.get(sessionId)
+      if (session) {
+        session.title = title
+        sessions.set(sessionId, session)
+
+        // 通知渲染进程更新会话列表
+        mainWindow?.webContents.send('agent:sessions_updated', Array.from(sessions.values()))
+      }
+
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
 }
 
 function generateId(): string {

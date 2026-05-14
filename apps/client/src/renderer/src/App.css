@@ -20,8 +20,14 @@ html, body {
   overflow: hidden;
 }
 
+/* Session Panel - 最左侧 */
+.session-panel {
+  width: 260px;
+  flex-shrink: 0;
+}
+
 .sidebar {
-  width: 240px;
+  width: 200px;
   background: #1a1a2e;
   color: white;
   display: flex;
