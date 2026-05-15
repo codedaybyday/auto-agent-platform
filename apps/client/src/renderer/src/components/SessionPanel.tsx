@@ -6,6 +6,7 @@ export interface Session {
   title: string
   updatedAt: number
   messageCount: number
+  unreadCount?: number
 }
 
 interface SessionPanelProps {
@@ -118,6 +119,9 @@ export function SessionPanel({
                       <span>{session.messageCount} 条消息</span>
                       <span>·</span>
                       <span>{formatTime(session.updatedAt)}</span>
+                      {session.unreadCount && session.unreadCount > 0 && (
+                        <span className="unread-badge">{session.unreadCount}</span>
+                      )}
                     </div>
                   </>
                 )}

@@ -22,32 +22,46 @@
 │  │                      App.tsx                             │  │
 │  │  - currentSessionId: 当前活跃会话ID                       │  │
 │  │  - sessions: 会话列表（从服务端同步）                      │  │
-│  │  - sessionMessages: 各会话消息缓存(Map)                   │  │
+│  │  - messages: 当前显示的消息（从服务端获取）               │  │
 │  └───────────────────────────┼──────────────────────────────┘  │
 │                              │                                   │
 │  ┌───────────────────────────┼──────────────────────────────┐  │
 │  │                   IPC Main Process                       │  │
-│  │  - 维护 WebSocket 连接                                   │  │
-│  │  - 转发前后端消息                                        │  │
-│  │  - 本地会话列表缓存（断网时可用）                           │  │
+│  │                                                          │  │
+│  │  HTTP Client (短连接)        WebSocket Client (长连接)    │  │
+│  │  ├─ GET /api/sessions        ├─ 连接管理                  │  │
+│  │  ├─ POST /api/sessions       ├─ 发送消息                  │  │
+│  │  ├─ DELETE /api/sessions/:id ├─ 接收流式响应              │  │
+│  │  ├─ PATCH /api/sessions/:id  ├─ 工具调用                  │  │
+│  │  └─ GET /api/sessions/:id/   └─ 心跳保活                  │  │
+│  │       /messages                                          │  │
 │  └───────────────────────────┼──────────────────────────────┘  │
 └──────────────────────────────┼─────────────────────────────────┘
-                               │ WebSocket
-                               ▼
+          │                    │
+          │ HTTP               │ WebSocket
+          │ (短连接)            │ (长连接)
+          ▼                    ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                         后端 (Node.js)                           │
+│  ┌──────────────────────┐      ┌─────────────────────────────┐  │
+│  │   HTTP API           │      │   WebSocket Gateway         │  │
+│  │   (Express Router)   │      │   (ws library)              │  │
+│  │                      │      │                             │  │
+│  │ GET  /api/sessions   │      │ 事件: agent.run             │  │
+│  │ POST /api/sessions   │      │ 事件: stream.chunk          │  │
+│  │ DELETE /api/...      │      │ 事件: tool.execute          │  │
+│  │ PATCH /api/...       │      │ 事件: tool.result           │  │
+│  │ GET /api/.../messages│      │                             │  │
+│  └──────────┬───────────┘      └─────────────┬───────────────┘  │
+│             │                                │                  │
+│             └────────────────┬───────────────┘                  │
+│                              ▼                                  │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │                 WebSocket Gateway                        │   │
-│  │  - 处理 session.create/list/switch/delete/rename        │   │
-│  │  - 管理客户端连接和订阅                                  │   │
-│  └─────────────────────────────────────────────────────────┘   │
-│                              │                                   │
-│  ┌───────────────────────────┼──────────────────────────────┐   │
 │  │                   SessionManager                         │   │
 │  │  - localSessions: Map<sessionId, AgentLoop>             │   │
 │  │  - sessionMetadata: Map<sessionId, Session>             │   │
 │  │  - userSessions: Map<userId, Set<sessionId>>            │   │
-│  └───────────────────────────┼──────────────────────────────┘   │
+│  └───────────────────────────┬─────────────────────────────┘   │
 │                              │                                   │
 │  ┌───────────────────────────┼──────────────────────────────┐   │
 │  │                    AgentLoop                             │   │
@@ -61,26 +75,27 @@
 
 ### 1. 创建会话
 ```
-前端: 点击"新建" → IPC createSession → WebSocket session.create
-后端: 创建 Session + AgentLoop → 返回 session.create_ack
+前端: 点击"新建" → IPC createSession → HTTP POST /api/sessions
+后端: 创建 Session + AgentLoop → 返回 session 数据
 前端: 添加到会话列表 → 切换到新会话 → 清空消息区域
 ```
 
 ### 2. 获取会话列表
 ```
-前端: IPC getSessions → WebSocket session.list
+前端: IPC getSessions → HTTP GET /api/sessions
 后端: 返回用户所有会话元数据
 前端: 更新 SessionPanel 列表
 ```
 
 ### 3. 切换会话
 ```
-前端: 
-  1. 保存当前会话消息到缓存
-  2. IPC switchSession → WebSocket (通知后端)
-  3. 从缓存加载目标会话消息
-  4. 如果没有缓存 → 请求消息历史
+前端:
+  1. IPC switchSession → 仅更新本地状态（不通知后端）
+  2. HTTP GET /api/sessions/:id/messages 获取最新历史
+  3. 显示消息（服务端是唯一直实数据源）
 ```
+
+**注意**：当前版本不使用前端缓存，每次切换都从服务端获取，保证数据一致性。缓存优化后期考虑。
 
 ### 4. 获取消息历史（新增）
 ```
@@ -132,43 +147,88 @@ interface Message {
 }
 ```
 
-## WebSocket 消息类型
+## 通信协议规范
+
+### HTTP API (短连接)
+
+| 方法 | 端点 | 说明 |
+|------|------|------|
+| `GET` | `/api/sessions` | 获取会话列表 |
+| `POST` | `/api/sessions` | 创建新会话 |
+| `DELETE` | `/api/sessions/:id` | 删除会话 |
+| `PATCH` | `/api/sessions/:id` | 重命名会话 |
+| `GET` | `/api/sessions/:id/messages` | 获取会话消息历史 |
+| `POST` | `/api/sessions/:id/chat` | 发送消息（非流式）|
+
+### WebSocket 消息类型 (长连接)
 
 | 类型 | 方向 | 说明 |
 |------|------|------|
-| `session.create` | C→S | 创建新会话 |
-| `session.create_ack` | S→C | 会话创建成功 |
-| `session.list` | C→S | 获取会话列表 |
-| `state.sync` | S→C | 返回会话列表 |
-| `session.switch` | C→S | 切换当前会话 |
-| `session.messages.get` | C→S | 获取会话消息历史 |
-| `session.messages.sync` | S→C | 返回消息历史 |
-| `session.delete` | C→S | 删除会话 |
-| `session.delete_ack` | S→C | 删除成功 |
-| `session.rename` | C→S | 重命名会话 |
-| `session.rename_ack` | S→C | 重命名成功 |
+| `connect` | C→S | 连接认证 |
+| `connect_ack` | S→C | 认证成功 |
+| `agent.run` | C→S | 发送消息并启动 Agent |
+| `stream.chunk` | S→C | 流式响应数据块 |
+| `stream.complete` | S→C | 流式响应完成 |
+| `stream.error` | S→C | 流式响应错误 |
+| `state.update` | S→C | 状态更新（工具执行等）|
+| `tool.execute` | S→C | 请求客户端执行工具 |
+| `tool.result` | C→S | 工具执行结果 |
 
-## 状态同步策略
+### 协议选择原则
+
+| 场景 | 协议 | 原因 |
+|------|------|------|
+| 会话 CRUD | HTTP | 请求-响应模式，无实时性要求 |
+| 消息历史获取 | HTTP | 一次性查询 |
+| 发送消息 | WebSocket | 需要流式接收 AI 回复 |
+| 工具执行 | WebSocket | 需要双向通信（后端请求客户端执行）|
+
+## 状态管理策略
+
+### 数据源原则
+**服务端是唯一直实数据源**，前端不维护长期缓存，每次操作后重新获取数据。
 
 ### 前端状态
-- `sessions`: 从服务端同步的会话列表
-- `currentSessionId`: 当前活跃会话ID
-- `sessionMessagesCache`: Map<sessionId, Message[]>
+- `sessions`: 会话列表（从服务端获取）
+- `currentSessionId`: 当前活跃会话ID（本地 UI 状态）
+- `messages`: 当前显示的消息（从服务端获取）
 
 ### 后端状态
 - `SessionManager.localSessions`: 活跃会话实例
 - `SessionManager.sessionMetadata`: 会话元数据
 - `AgentLoop.state.messages`: 各会话的消息历史
 
-### 同步时机
+### 数据流
 1. **初始化**: 前端启动时获取完整会话列表
-2. **创建/删除/重命名**: 操作成功后广播更新
-3. **切换会话**: 懒加载消息历史（首次切换时获取）
-4. **定时同步**: 可选，用于多设备同步
+2. **创建/删除/重命名**: 操作成功后重新加载会话列表
+3. **切换会话**: 立即从服务端获取该会话的最新消息
+4. **发送消息**: WebSocket 流式响应，实时更新 UI
 
-## 实现优先级
+### 关于缓存（未来考虑）
+当前版本不使用前端缓存，简化数据一致性逻辑。后续如需优化可考虑：
+- 乐观更新（发送消息后立即显示在 UI）
+- 离线缓存（PWA 场景）
+- 消息分页加载（单会话消息量大时）
 
-1. **P0**: 基础会话管理（创建/列表/切换）
-2. **P1**: 消息历史获取（解决切换丢失问题）
-3. **P2**: 删除/重命名功能
-4. **P3**: 持久化存储（PostgreSQL）
+## 实现优先级与状态
+
+### 已完成 ✓
+- [x] HTTP API 获取会话列表 (`GET /api/sessions`)
+- [x] HTTP API 删除会话 (`DELETE /api/sessions/:id`)
+- [x] HTTP API 获取消息历史 (`GET /api/sessions/:id/messages`)
+- [x] WebSocket 消息流 (`agent.run`, `stream.chunk`)
+- [x] `createSession` 改为 HTTP POST
+- [x] 修复切换会话消息加载竞态条件
+- [x] 消息添加 `sessionId` 字段
+
+### 待实现
+- [ ] **P0**: 后端用户维度消息推送（详见 [session-message-sync.md](./session-message-sync.md)）
+- [ ] **P0**: 前端消息去重合并 (`mergeMessages`)
+- [ ] **P0**: 前端未读消息计数和展示
+- [ ] **P1**: `renameSession` 后端 API（当前仅本地缓存）
+- [ ] **P3**: 持久化存储（PostgreSQL）
+
+## 相关文档
+
+- [前端会话管理交互流程](./frontend-session-interaction.md) - 前端交互细节
+- [多会话消息同步方案](./session-message-sync.md) - 跨会话消息推送设计

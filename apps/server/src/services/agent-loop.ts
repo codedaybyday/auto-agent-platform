@@ -120,12 +120,7 @@ export class AgentLoop extends EventEmitter {
           continue
         } else {
           // 得到最终答案，结束循环
-          this.addMessage({
-            id: this.generateId(),
-            role: 'assistant',
-            content: llmResponse.content || '',
-            timestamp: Date.now()
-          })
+          // 注意：assistant 消息已在 callLLM 中添加，这里只需更新状态和 emit 事件
           this.state.status = 'completed'
           this.emit('run_complete', {
             output: llmResponse.content || '',
