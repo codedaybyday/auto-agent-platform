@@ -129,22 +129,25 @@ function handleServerMessage(message: any): void {
       break
 
     case 'stream.chunk':
-      // 转发给渲染进程
+      console.log(`[Main] Forwarding stream.chunk for session ${message.sessionId}`)
+      // 转发给渲染进程，携带 sessionId 用于消息归属验证
+      // 使用后端传来的 messageId 保持 ID 一致性
       mainWindow?.webContents.send('agent:message', {
-        id: generateId(),
+        id: message.messageId || generateId(),
         role: 'assistant',
         content: message.payload?.content || '',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        sessionId: message.sessionId
       })
       break
 
     case 'stream.complete':
-      mainWindow?.webContents.send('agent:processing', false)
+      mainWindow?.webContents.send('agent:processing', { processing: false, sessionId: message.sessionId })
       break
 
     case 'stream.error':
       mainWindow?.webContents.send('agent:error', message.payload?.error)
-      mainWindow?.webContents.send('agent:processing', false)
+      mainWindow?.webContents.send('agent:processing', { processing: false, sessionId: message.sessionId })
       break
 
     case 'state.update':
@@ -326,15 +329,16 @@ function setupAgentHandlers(): void {
         return { success: false, error: 'No active session' }
       }
 
-      // 发送用户消息给渲染进程显示
+      // 发送用户消息给渲染进程显示，携带 sessionId
       mainWindow?.webContents.send('agent:message', {
         id: generateId(),
         role: 'user',
         content,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        sessionId: currentSessionId
       })
 
-      mainWindow?.webContents.send('agent:processing', true)
+      mainWindow?.webContents.send('agent:processing', { processing: true, sessionId: currentSessionId })
 
       // 发送到后端
       ws.send(JSON.stringify({
@@ -382,7 +386,9 @@ function setupAgentHandlers(): void {
   // 获取会话列表
   // HTTP API 调用辅助函数
   async function httpGet(path: string) {
-    const response = await fetch(`${HTTP_BASE_URL}${path}`)
+    const response = await fetch(`${HTTP_BASE_URL}${path}`, {
+      headers: { 'x-user-id': 'desktop-user' }
+    })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     return response.json()
   }
@@ -390,7 +396,10 @@ function setupAgentHandlers(): void {
   async function httpPost(path: string, body?: any) {
     const response = await fetch(`${HTTP_BASE_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': 'desktop-user'
+      },
       body: body ? JSON.stringify(body) : undefined
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -398,7 +407,10 @@ function setupAgentHandlers(): void {
   }
 
   async function httpDelete(path: string) {
-    const response = await fetch(`${HTTP_BASE_URL}${path}`, { method: 'DELETE' })
+    const response = await fetch(`${HTTP_BASE_URL}${path}`, {
+      method: 'DELETE',
+      headers: { 'x-user-id': 'desktop-user' }
+    })
     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     return response.json()
   }
@@ -410,7 +422,7 @@ function setupAgentHandlers(): void {
       const data = await httpGet('/api/sessions')
 
       // 更新本地缓存
-      for (const session of data.sessions || []) {
+      for (const session of data.data?.sessions || []) {
         sessions.set(session.id, {
           id: session.id,
           title: session.title || `会话 ${sessions.size + 1}`,
@@ -430,38 +442,33 @@ function setupAgentHandlers(): void {
     }
   })
 
-  // 创建新会话
+  // 创建新会话（使用 HTTP）
   ipcMain.handle('agent:create_session', async () => {
     try {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return { success: false, error: 'Not connected to server' }
+      // 使用 HTTP POST 创建会话
+      const data = await httpPost('/api/sessions', { title: '新会话' })
+
+      if (!data.success || !data.data?.session) {
+        return { success: false, error: '创建会话失败' }
       }
 
-      const sessionPromise = new Promise<string>((resolve, reject) => {
-        pendingSessionResolve = resolve
-        setTimeout(() => {
-          if (pendingSessionResolve === resolve) {
-            pendingSessionResolve = null
-            reject(new Error('Session creation timeout'))
-          }
-        }, 10000)
+      const session = data.data.session
+      currentSessionId = session.id
+
+      // 添加到本地缓存
+      sessions.set(session.id, {
+        id: session.id,
+        title: session.title || `会话 ${sessions.size + 1}`,
+        updatedAt: new Date(session.updatedAt).getTime(),
+        messageCount: 0
       })
 
-      ws.send(JSON.stringify({
-        type: 'session.create',
-        messageId: generateId(),
-        timestamp: Date.now(),
-        payload: {}
-      }))
+      // 通知渲染进程更新会话列表
+      mainWindow?.webContents.send('agent:sessions_updated', Array.from(sessions.values()))
 
-      const sessionId = await sessionPromise
-      currentSessionId = sessionId
-
-      // 通知渲染进程切换会话
-      mainWindow?.webContents.send('agent:session_switched', sessionId)
-
-      return { success: true, sessionId }
+      return { success: true, sessionId: session.id }
     } catch (error) {
+      console.error('[Main] Create session error:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error)
@@ -474,10 +481,8 @@ function setupAgentHandlers(): void {
     try {
       currentSessionId = sessionId
 
-      // 清空当前消息显示
-      mainWindow?.webContents.send('agent:history_cleared')
-
       // 通知渲染进程切换会话
+      // 注意：不发送 history_cleared，由前端自己控制消息显示
       mainWindow?.webContents.send('agent:session_switched', sessionId)
 
       return { success: true }
@@ -546,7 +551,7 @@ function setupAgentHandlers(): void {
     try {
       // 使用 HTTP GET 获取消息历史
       const data = await httpGet(`/api/sessions/${sessionId}/messages`)
-      return { success: true, messages: data.messages || [] }
+      return { success: true, messages: data.data?.messages || [] }
     } catch (error) {
       return {
         success: false,

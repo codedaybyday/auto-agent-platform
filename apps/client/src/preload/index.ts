@@ -39,7 +39,7 @@ export interface AgentAPI {
   /** 监听新消息 */
   onMessage: (callback: (message: Message) => void) => () => void
   /** 监听处理状态 */
-  onProcessing: (callback: (isProcessing: boolean) => void) => () => void
+  onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => () => void
   /** 监听工具开始执行 */
   onToolStart: (callback: (data: { toolCall: { id: string; name: string; input: Record<string, unknown> } }) => void) => () => void
   /** 监听工具执行完成 */
@@ -84,8 +84,8 @@ const agentAPI: AgentAPI = {
     return () => ipcRenderer.removeListener('agent:message', handler)
   },
 
-  onProcessing: (callback: (isProcessing: boolean) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, isProcessing: boolean) => callback(isProcessing)
+  onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { processing: boolean; sessionId?: string }) => callback(data)
     ipcRenderer.on('agent:processing', handler)
     return () => ipcRenderer.removeListener('agent:processing', handler)
   },

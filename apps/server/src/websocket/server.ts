@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws'
 import type { Server } from 'http'
 import type { WSConnection, WSMessage, MessageType } from '../types/index.js'
 import { SessionManager } from '../services/session-manager.js'
+import { EventBus } from './event-bus.js'
 
 export class WebSocketGateway {
   private wss: WebSocketServer
@@ -14,10 +15,16 @@ export class WebSocketGateway {
   private userConnections = new Map<string, Set<string>>()
   private sessionManager: SessionManager
   private instanceId: string
+  // 中央事件总线
+  private eventBus: EventBus
 
   constructor(server: Server, sessionManager: SessionManager, instanceId: string) {
     this.sessionManager = sessionManager
     this.instanceId = instanceId
+
+    // 初始化事件总线
+    this.eventBus = new EventBus(sessionManager)
+    this.setupEventBusHandler()
 
     this.wss = new WebSocketServer({
       server,
@@ -28,6 +35,82 @@ export class WebSocketGateway {
 
     this.setupServer()
     this.startHeartbeat()
+  }
+
+  /**
+   * 设置事件总线处理器
+   */
+  private setupEventBusHandler(): void {
+    this.eventBus.setMessageHandler((event) => {
+      const { sessionId, type, data } = event
+
+      // 查找该会话属于哪个用户
+      const userId = this.eventBus['sessionUserMap'].get(sessionId)
+      if (!userId) return
+
+      // 根据事件类型构造消息
+      let message: WSMessage
+
+      switch (type) {
+        case 'stream_chunk':
+          message = {
+            type: 'stream.chunk' as MessageType,
+            messageId: this.generateId(),
+            timestamp: Date.now(),
+            sessionId,
+            payload: data
+          }
+          break
+        case 'stream_complete':
+          message = {
+            type: 'stream.complete' as MessageType,
+            messageId: this.generateId(),
+            timestamp: Date.now(),
+            sessionId,
+            payload: data
+          }
+          break
+        case 'stream_error':
+          message = {
+            type: 'stream.error' as MessageType,
+            messageId: this.generateId(),
+            timestamp: Date.now(),
+            sessionId,
+            payload: { error: data.error?.message || 'Unknown error' }
+          }
+          break
+        case 'tool_start':
+          message = {
+            type: 'state.update' as MessageType,
+            messageId: this.generateId(),
+            timestamp: Date.now(),
+            sessionId,
+            payload: {
+              type: 'tool_start',
+              toolCall: data.toolCall
+            }
+          }
+          break
+        case 'tool_end':
+          message = {
+            type: 'state.update' as MessageType,
+            messageId: this.generateId(),
+            timestamp: Date.now(),
+            sessionId,
+            payload: {
+              type: 'tool_end',
+              toolCall: data.toolCall,
+              result: data.result
+            }
+          }
+          break
+        default:
+          return
+      }
+
+      // 推送给该用户的所有连接
+      this.sendToUser(userId, message)
+    })
   }
 
   private setupServer(): void {
@@ -141,7 +224,21 @@ export class WebSocketGateway {
       }
     })
 
-    console.log(`[WebSocket] User ${userId} authenticated, connection ${connectionId}`)
+    // 注册连接到事件总线
+    this.eventBus.registerConnection(userId, connectionId, tempConnection.socket!)
+
+    // 注册用户的所有会话到事件总线
+    const sessions = this.sessionManager.getUserSessions(userId)
+    for (const session of sessions) {
+      this.eventBus.registerSession(session.id, userId)
+      // 绑定 AgentLoop 事件
+      const agentLoop = this.sessionManager.getAgentLoop(session.id)
+      if (agentLoop) {
+        this.eventBus.bindAgentLoop(agentLoop, session.id)
+      }
+    }
+
+    console.log(`[WebSocket] User ${userId} authenticated, connection ${connectionId}, registered ${sessions.length} sessions`)
   }
 
   /**
@@ -156,24 +253,11 @@ export class WebSocketGateway {
           await this.handleSessionCreate(connection, message)
           break
 
+        // session.list / switch / delete / rename / messages.get
+        // 已改用 HTTP API，不再通过 WebSocket 处理
+
         case 'session.list':
           await this.handleSessionList(connection, message)
-          break
-
-        case 'session.switch':
-          await this.handleSessionSwitch(connection, message)
-          break
-
-        case 'session.delete':
-          await this.handleSessionDelete(connection, message)
-          break
-
-        case 'session.rename':
-          await this.handleSessionRename(connection, message)
-          break
-
-        case 'session.messages.get':
-          await this.handleSessionMessagesGet(connection, message)
           break
 
         case 'agent.run':
@@ -223,6 +307,15 @@ export class WebSocketGateway {
   private async handleSessionCreate(connection: WSConnection, message: WSMessage): Promise<void> {
     const session = await this.sessionManager.createSession(connection.userId, message.payload?.title)
 
+    // 注册新会话到事件总线
+    this.eventBus.registerSession(session.id, connection.userId)
+
+    // 绑定 AgentLoop 事件（如果 AgentLoop 已创建）
+    const agentLoop = this.sessionManager.getAgentLoop(session.id)
+    if (agentLoop) {
+      this.eventBus.bindAgentLoop(agentLoop, session.id)
+    }
+
     this.sendToConnection(connection.id, {
       type: 'session.create_ack' as MessageType,
       messageId: this.generateId(),
@@ -257,9 +350,9 @@ export class WebSocketGateway {
       throw new Error('Missing content')
     }
 
-    const { agentLoop } = await this.sessionManager.getOrCreateSession(connection.userId, sessionId)
+    const { agentLoop, session } = await this.sessionManager.getOrCreateSession(connection.userId, sessionId)
 
-    // 绑定 WebSocket 用于工具调用
+    // 绑定 WebSocket 用于工具调用（双向通信）
     agentLoop.bindWebSocket(connection)
 
     // 订阅会话消息
@@ -267,74 +360,15 @@ export class WebSocketGateway {
       connection.subscriptions.add(sessionId)
     }
 
-    // 清除旧的事件监听，避免重复绑定
-    agentLoop.removeAllListeners('stream_chunk')
-    agentLoop.removeAllListeners('tool_start')
-    agentLoop.removeAllListeners('tool_end')
-    agentLoop.removeAllListeners('run_complete')
-    agentLoop.removeAllListeners('run_error')
+    // 注册会话到事件总线
+    if (session) {
+      this.eventBus.registerSession(session.id, connection.userId)
+    }
 
-    // 设置事件监听
-    agentLoop.on('stream_chunk', (data) => {
-      this.sendToConnection(connection.id, {
-        type: 'stream.chunk' as MessageType,
-        messageId: this.generateId(),
-        timestamp: Date.now(),
-        sessionId,
-        payload: data
-      })
-    })
-
-    agentLoop.on('tool_start', (data) => {
-      this.sendToConnection(connection.id, {
-        type: 'state.update' as MessageType,
-        messageId: this.generateId(),
-        timestamp: Date.now(),
-        sessionId,
-        payload: {
-          type: 'tool_start',
-          toolCall: data.toolCall
-        }
-      })
-    })
-
-    agentLoop.on('tool_end', (data) => {
-      this.sendToConnection(connection.id, {
-        type: 'state.update' as MessageType,
-        messageId: this.generateId(),
-        timestamp: Date.now(),
-        sessionId,
-        payload: {
-          type: 'tool_end',
-          toolCall: data.toolCall,
-          result: data.result
-        }
-      })
-    })
-
-    agentLoop.on('run_complete', (data) => {
-      this.sendToConnection(connection.id, {
-        type: 'stream.complete' as MessageType,
-        messageId: this.generateId(),
-        timestamp: Date.now(),
-        sessionId,
-        payload: {
-          output: data.output
-        }
-      })
-    })
-
-    agentLoop.on('run_error', (data) => {
-      this.sendToConnection(connection.id, {
-        type: 'stream.error' as MessageType,
-        messageId: this.generateId(),
-        timestamp: Date.now(),
-        sessionId,
-        payload: {
-          error: data.error.message
-        }
-      })
-    })
+    // 绑定 AgentLoop 事件到事件总线（幂等，多次调用不会重复绑定）
+    if (sessionId) {
+      this.eventBus.bindAgentLoop(agentLoop, sessionId)
+    }
 
     // 启动 Agent Loop
     agentLoop.run(content).catch(error => {
@@ -398,6 +432,7 @@ export class WebSocketGateway {
    */
   sendToUser(userId: string, message: WSMessage): void {
     const connectionIds = this.userConnections.get(userId)
+    console.log(`[WebSocket] Sending ${message.type} to user ${userId}, connections: ${connectionIds?.size || 0}`)
     if (connectionIds) {
       for (const connId of connectionIds) {
         this.sendToConnection(connId, message)
@@ -411,6 +446,8 @@ export class WebSocketGateway {
   private removeConnection(connectionId: string): void {
     const conn = this.connections.get(connectionId)
     if (conn) {
+      // 从事件总线注销连接
+      this.eventBus.unregisterConnection(conn.userId, connectionId)
       this.userConnections.get(conn.userId)?.delete(connectionId)
       this.connections.delete(connectionId)
       console.log(`[WebSocket] Connection ${connectionId} removed`)
