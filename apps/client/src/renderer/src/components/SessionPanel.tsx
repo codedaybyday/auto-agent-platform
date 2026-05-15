@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import './SessionPanel.css'
 
-interface Session {
+export interface Session {
   id: string
   title: string
   updatedAt: number

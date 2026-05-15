@@ -145,6 +145,13 @@ function App(): JSX.Element {
     const result = await window.api.agent.getSessions()
     if (result.success && result.sessions) {
       setSessions(result.sessions)
+
+      // 如果有会话但没有当前会话，自动选中第一个
+      if (result.sessions.length > 0 && !currentSessionIdRef.current) {
+        const firstSession = result.sessions[0]
+        setCurrentSessionId(firstSession.id)
+        currentSessionIdRef.current = firstSession.id
+      }
     }
   }
 
@@ -161,7 +168,10 @@ function App(): JSX.Element {
     }
 
     const result = await window.api.agent.createSession()
-    if (result.success) {
+    if (result.success && result.sessionId) {
+      // 设置新会话为当前会话
+      setCurrentSessionId(result.sessionId)
+      currentSessionIdRef.current = result.sessionId
       // 新会话为空消息列表
       setMessages([])
       // 重新加载会话列表

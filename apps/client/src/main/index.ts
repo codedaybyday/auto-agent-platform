@@ -11,6 +11,9 @@ let pendingConnectResolve: (() => void) | null = null
 let isInitializing = false
 let initPromise: Promise<{ success: boolean; sessionId?: string; error?: string }> | null = null
 
+// 本地会话缓存（模块级别，可被多个函数访问）
+const sessions: Map<string, { id: string; title: string; updatedAt: number; messageCount: number }> = new Map()
+
 // 后端服务地址
 const SERVER_URL = process.env.VITE_SERVER_URL || 'ws://localhost:3001'
 const HTTP_BASE_URL = SERVER_URL.replace(/^ws/, 'http').replace(/\/ws$/, '')
@@ -164,8 +167,21 @@ function handleServerMessage(message: any): void {
 
     case 'session.create_ack':
       if (message.payload?.session?.id) {
-        currentSessionId = message.payload.session.id
+        const session = message.payload.session
+        currentSessionId = session.id
         console.log('[Main] Session created:', currentSessionId)
+
+        // 添加到本地会话缓存
+        sessions.set(session.id, {
+          id: session.id,
+          title: session.title || `会话 ${sessions.size + 1}`,
+          updatedAt: new Date(session.updatedAt).getTime(),
+          messageCount: session.messages?.length || 0
+        })
+
+        // 通知渲染进程更新会话列表
+        mainWindow?.webContents.send('agent:sessions_updated', Array.from(sessions.values()))
+
         // 通知等待的 init 调用
         if (pendingSessionResolve) {
           pendingSessionResolve(currentSessionId)
@@ -362,9 +378,6 @@ function setupAgentHandlers(): void {
       }
     }
   })
-
-  // 本地会话存储（简化版，实际应该从服务端获取）
-  const sessions: Map<string, { id: string; title: string; updatedAt: number; messageCount: number }> = new Map()
 
   // 获取会话列表
   // HTTP API 调用辅助函数
