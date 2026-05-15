@@ -138,6 +138,27 @@ export class SessionManager {
   }
 
   /**
+   * 清除会话消息
+   */
+  async clearSessionMessages(sessionId: string): Promise<void> {
+    console.log('[SessionManager] Clearing messages for session:', sessionId)
+    const session = this.sessionMetadata.get(sessionId)
+    if (session) {
+      const beforeCount = session.messages.length
+      session.messages = []
+      session.updatedAt = new Date()
+      console.log('[SessionManager] Cleared', beforeCount, 'messages from session metadata')
+    }
+    // 同时清除 AgentLoop 中的消息
+    const agentLoop = this.localSessions.get(sessionId)
+    if (agentLoop) {
+      const beforeCount = agentLoop.getMessages().length
+      agentLoop.clearMessages()
+      console.log('[SessionManager] Cleared', beforeCount, 'messages from AgentLoop')
+    }
+  }
+
+  /**
    * 删除会话
    */
   async deleteSession(sessionId: string): Promise<void> {

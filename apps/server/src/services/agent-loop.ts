@@ -191,6 +191,13 @@ export class AgentLoop extends EventEmitter {
   }
 
   /**
+   * 清除历史消息
+   */
+  clearMessages(): void {
+    this.state.messages = []
+  }
+
+  /**
    * 绑定 WebSocket 客户端（用于工具调用）
    */
   bindWebSocket(wsClient: any): void {

@@ -359,11 +359,23 @@ function setupAgentHandlers(): void {
   })
 
   // 清空历史
-  ipcMain.handle('agent:clear_history', () => {
+  ipcMain.handle('agent:clear_history', async () => {
     try {
+      if (!currentSessionId) {
+        console.log('[Main] clear_history: No active session')
+        return { success: false, error: 'No active session' }
+      }
+
+      console.log('[Main] clear_history: Calling API for session', currentSessionId)
+      // 调用后端 API 清除消息
+      await httpDelete(`/api/sessions/${currentSessionId}/messages`)
+      console.log('[Main] clear_history: API success')
+
       mainWindow?.webContents.send('agent:history_cleared')
+      console.log('[Main] clear_history: Sent history_cleared event')
       return { success: true }
     } catch (error) {
+      console.error('[Main] clear_history error:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error)
