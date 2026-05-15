@@ -6,8 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
+    "build": "tsup src/index.ts --format esm --dts",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist node_modules"
   },
@@ -15,6 +14,7 @@
     "@auto-agent/shared-types": "workspace:*"
   },
   "devDependencies": {
+    "tsup": "^8.5.1",
     "typescript": "^5.5.2"
   }
 }

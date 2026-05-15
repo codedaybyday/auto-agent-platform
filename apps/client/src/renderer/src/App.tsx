@@ -81,11 +81,14 @@ function App(): JSX.Element {
   }, [currentSessionId])
 
   useEffect(() => {
-    // 初始化 Agent
-    initializeAgent()
-
-    // 加载会话列表
-    loadSessions()
+    // 初始化 Agent，完成后加载会话列表
+    const initAndLoad = async () => {
+      const result = await initializeAgent()
+      if (result.success) {
+        await loadSessions()
+      }
+    }
+    initAndLoad().catch(console.error)
 
     // Setup event listeners
     const unsubscribeMessage = window.api.agent.onMessage((message: Message) => {
@@ -186,6 +189,7 @@ function App(): JSX.Element {
       setIsConnected(false)
       setError(result.error || '初始化 Agent 失败')
     }
+    return result
   }
 
   const loadSessions = async () => {
@@ -290,9 +294,15 @@ function App(): JSX.Element {
   }
 
   const handleClearHistory = async () => {
+    console.log('[App] Clearing history...')
     const result = await window.api.agent.clearHistory()
+    console.log('[App] clearHistory result:', result)
     if (result.success) {
       setMessages([])
+      console.log('[App] Messages cleared locally')
+    } else {
+      console.error('[App] Failed to clear history:', result.error)
+      setError(result.error || '清除历史失败')
     }
   }
 

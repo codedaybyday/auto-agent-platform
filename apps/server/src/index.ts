@@ -290,6 +290,46 @@ app.get('/api/sessions/:sessionId/messages', authMiddleware, (req: AuthRequest, 
   }
 })
 
+// 清除会话消息
+app.delete('/api/sessions/:sessionId/messages', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const { sessionId } = req.params
+    console.log('[API] Clear messages request for session:', sessionId, 'user:', req.user?.id)
+    const session = sessionManager.getSession(sessionId)
+
+    if (!session) {
+      res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      })
+      return
+    }
+
+    // 验证权限
+    if (session.userId !== req.user!.id) {
+      res.status(403).json({
+        success: false,
+        error: 'Forbidden'
+      })
+      return
+    }
+
+    await sessionManager.clearSessionMessages(sessionId)
+    console.log('[API] Messages cleared for session:', sessionId)
+
+    res.json({
+      success: true,
+      message: 'Messages cleared'
+    })
+  } catch (error) {
+    console.error('[API] Clear messages error:', error)
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
 // ==================== 开发调试用路由 ====================
 
 // 获取服务器统计（仅开发环境）
