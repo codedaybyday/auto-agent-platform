@@ -563,7 +563,18 @@ function setupAgentHandlers(): void {
     try {
       // 使用 HTTP GET 获取消息历史
       const data = await httpGet(`/api/sessions/${sessionId}/messages`)
-      return { success: true, messages: data.data?.messages || [] }
+      const messages = data.data?.messages || []
+
+      // 更新本地缓存中的消息计数
+      const session = sessions.get(sessionId)
+      if (session) {
+        session.messageCount = messages.length
+        sessions.set(sessionId, session)
+        // 通知渲染进程更新会话列表
+        mainWindow?.webContents.send('agent:sessions_updated', Array.from(sessions.values()))
+      }
+
+      return { success: true, messages }
     } catch (error) {
       return {
         success: false,

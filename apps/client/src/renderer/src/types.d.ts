@@ -26,7 +26,10 @@ export interface AgentAPI {
   /** 监听工具结果消息事件 */
   onToolResults: (callback: (message: Message) => void) => () => void
   /** 监听历史清空事件 */
-  onHistoryCleared: (callback: () => void) => () => void
+  onHistoryCleared: (callback: () => void) => () => void,
+  onSessionsUpdated: (callback: (sessions: Session[]) => void) => () => void,
+  onSessionSwitched: (callback: (sessionId: string) => void) => () => void,
+  onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => () => void
 }
 
 declare global {

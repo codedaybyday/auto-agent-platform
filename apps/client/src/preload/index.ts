@@ -141,4 +141,4 @@ if (process.contextIsolated) {
   window.api = api
 }
 
-export type { Message }
+// export type { Message }
