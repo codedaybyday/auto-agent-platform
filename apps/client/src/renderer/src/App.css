@@ -20,7 +20,7 @@ html, body {
   overflow: hidden;
 }
 
-/* Session Panel - 最左侧 */
+/* Session Panel - 第二列（sidebar 之后） */
 .session-panel {
   width: 260px;
   flex-shrink: 0;

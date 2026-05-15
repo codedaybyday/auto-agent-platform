@@ -186,9 +186,23 @@ function App(): JSX.Element {
     const result = await window.api.agent.switchSession(sessionId)
     if (result.success) {
       setCurrentSessionId(sessionId)
-      // 从 ref 加载目标会话的消息
-      const cachedMessages = sessionMessagesCacheRef.current.get(sessionId) || []
-      setMessages(cachedMessages)
+      // 优先从缓存加载消息
+      let targetMessages = sessionMessagesCacheRef.current.get(sessionId)
+
+      // 如果缓存中没有，从服务端获取
+      if (!targetMessages || targetMessages.length === 0) {
+        const msgResult = await window.api.agent.getSessionMessages(sessionId)
+        if (msgResult.success && msgResult.messages) {
+          targetMessages = msgResult.messages
+          // 更新缓存
+          const newCache = new Map(sessionMessagesCacheRef.current)
+          newCache.set(sessionId, targetMessages)
+          sessionMessagesCacheRef.current = newCache
+          setSessionMessagesCache(newCache)
+        }
+      }
+
+      setMessages(targetMessages || [])
     } else {
       setError(result.error || '切换会话失败')
     }
@@ -253,16 +267,6 @@ function App(): JSX.Element {
 
   return (
     <div className="app">
-      {/* 左侧会话面板 */}
-      <SessionPanel
-        sessions={sessions}
-        currentSessionId={currentSessionId}
-        onSwitchSession={handleSwitchSession}
-        onCreateSession={handleCreateSession}
-        onDeleteSession={handleDeleteSession}
-        onRenameSession={handleRenameSession}
-      />
-
       <aside className="sidebar">
         <div className="sidebar-header">
           <h1>🤖 Auto Agent</h1>
@@ -295,6 +299,16 @@ function App(): JSX.Element {
           </span>
         </div>
       </aside>
+
+      {/* 会话列表面板 */}
+      <SessionPanel
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onSwitchSession={handleSwitchSession}
+        onCreateSession={handleCreateSession}
+        onDeleteSession={handleDeleteSession}
+        onRenameSession={handleRenameSession}
+      />
 
       <main className="main-content">
         {error && (

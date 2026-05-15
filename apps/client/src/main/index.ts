@@ -13,6 +13,7 @@ let initPromise: Promise<{ success: boolean; sessionId?: string; error?: string 
 
 // 后端服务地址
 const SERVER_URL = process.env.VITE_SERVER_URL || 'ws://localhost:3001'
+const HTTP_BASE_URL = SERVER_URL.replace(/^ws/, 'http').replace(/\/ws$/, '')
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -366,52 +367,51 @@ function setupAgentHandlers(): void {
   const sessions: Map<string, { id: string; title: string; updatedAt: number; messageCount: number }> = new Map()
 
   // 获取会话列表
+  // HTTP API 调用辅助函数
+  async function httpGet(path: string) {
+    const response = await fetch(`${HTTP_BASE_URL}${path}`)
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    return response.json()
+  }
+
+  async function httpPost(path: string, body?: any) {
+    const response = await fetch(`${HTTP_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    return response.json()
+  }
+
+  async function httpDelete(path: string) {
+    const response = await fetch(`${HTTP_BASE_URL}${path}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    return response.json()
+  }
+
+  // 获取会话列表（使用 HTTP 短连接）
   ipcMain.handle('agent:get_sessions', async () => {
     try {
-      // 从服务端获取会话列表
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return { success: false, error: 'Not connected to server' }
+      // 使用 HTTP GET 获取会话列表
+      const data = await httpGet('/api/sessions')
+
+      // 更新本地缓存
+      for (const session of data.sessions || []) {
+        sessions.set(session.id, {
+          id: session.id,
+          title: session.title || `会话 ${sessions.size + 1}`,
+          updatedAt: new Date(session.updatedAt).getTime(),
+          messageCount: session.messages?.length || 0
+        })
       }
 
-      return new Promise((resolve) => {
-        const timeout = setTimeout(() => {
-          resolve({ success: true, sessions: Array.from(sessions.values()) })
-        }, 1000)
-
-        // 发送获取会话列表请求
-        ws!.send(JSON.stringify({
-          type: 'session.list',
-          messageId: generateId(),
-          timestamp: Date.now()
-        }))
-
-        // 临时监听响应
-        const handler = (data: Buffer) => {
-          try {
-            const message = JSON.parse(data.toString())
-            if (message.type === 'state.sync' && message.payload?.sessions) {
-              clearTimeout(timeout)
-              ws!.off('message', handler)
-              // 更新本地缓存
-              for (const session of message.payload.sessions) {
-                sessions.set(session.id, {
-                  id: session.id,
-                  title: session.title || `会话 ${sessions.size + 1}`,
-                  updatedAt: new Date(session.updatedAt).getTime(),
-                  messageCount: session.messages?.length || 0
-                })
-              }
-              resolve({ success: true, sessions: Array.from(sessions.values()) })
-            }
-          } catch {
-            // ignore
-          }
-        }
-        ws!.on('message', handler)
-      })
+      return { success: true, sessions: Array.from(sessions.values()) }
     } catch (error) {
+      // 如果 HTTP 请求失败，返回本地缓存
       return {
-        success: false,
+        success: true,
+        sessions: Array.from(sessions.values()),
         error: error instanceof Error ? error.message : String(error)
       }
     }
@@ -476,12 +476,11 @@ function setupAgentHandlers(): void {
     }
   })
 
-  // 删除会话
+  // 删除会话（使用 HTTP 短连接）
   ipcMain.handle('agent:delete_session', async (_event, sessionId: string) => {
     try {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        return { success: false, error: 'Not connected to server' }
-      }
+      // 调用后端 HTTP API 删除会话
+      await httpDelete(`/api/sessions/${sessionId}`)
 
       // 从本地缓存删除
       sessions.delete(sessionId)
@@ -504,9 +503,10 @@ function setupAgentHandlers(): void {
     }
   })
 
-  // 重命名会话
+  // 重命名会话（使用 HTTP 短连接）
   ipcMain.handle('agent:rename_session', async (_event, sessionId: string, title: string) => {
     try {
+      // 更新本地缓存
       const session = sessions.get(sessionId)
       if (session) {
         session.title = title
@@ -516,11 +516,29 @@ function setupAgentHandlers(): void {
         mainWindow?.webContents.send('agent:sessions_updated', Array.from(sessions.values()))
       }
 
+      // TODO: 后端需要添加重命名 API
+      // await httpPost(`/api/sessions/${sessionId}/rename`, { title })
+
       return { success: true }
     } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
+
+  // 获取会话消息历史（使用 HTTP 短连接）
+  ipcMain.handle('agent:get_session_messages', async (_event, sessionId: string) => {
+    try {
+      // 使用 HTTP GET 获取消息历史
+      const data = await httpGet(`/api/sessions/${sessionId}/messages`)
+      return { success: true, messages: data.messages || [] }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        messages: []
       }
     }
   })

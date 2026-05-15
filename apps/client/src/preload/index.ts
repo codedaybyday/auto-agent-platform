@@ -26,6 +26,8 @@ export interface AgentAPI {
   getMessages: () => Promise<{ success: boolean; messages?: Message[]; error?: string }>
   /** 获取会话列表 */
   getSessions: () => Promise<{ success: boolean; sessions?: Session[]; error?: string }>
+  /** 获取指定会话的消息历史 */
+  getSessionMessages: (sessionId: string) => Promise<{ success: boolean; messages?: Message[]; error?: string }>
   /** 创建新会话 */
   createSession: () => Promise<{ success: boolean; sessionId?: string; error?: string }>
   /** 切换会话 */
@@ -65,6 +67,8 @@ const agentAPI: AgentAPI = {
   getMessages: () => ipcRenderer.invoke('agent:get_messages'),
 
   getSessions: () => ipcRenderer.invoke('agent:get_sessions'),
+
+  getSessionMessages: (sessionId: string) => ipcRenderer.invoke('agent:get_session_messages', sessionId),
 
   createSession: () => ipcRenderer.invoke('agent:create_session'),
 

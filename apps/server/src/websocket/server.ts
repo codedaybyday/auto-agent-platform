@@ -160,6 +160,22 @@ export class WebSocketGateway {
           await this.handleSessionList(connection, message)
           break
 
+        case 'session.switch':
+          await this.handleSessionSwitch(connection, message)
+          break
+
+        case 'session.delete':
+          await this.handleSessionDelete(connection, message)
+          break
+
+        case 'session.rename':
+          await this.handleSessionRename(connection, message)
+          break
+
+        case 'session.messages.get':
+          await this.handleSessionMessagesGet(connection, message)
+          break
+
         case 'agent.run':
           await this.handleAgentRun(connection, message)
           break
