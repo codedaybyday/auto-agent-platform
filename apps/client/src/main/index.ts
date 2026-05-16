@@ -201,15 +201,27 @@ async function executeToolAndReport(message: any): Promise<void> {
 
   try {
     // 动态导入工具
-    const { bashTool } = await import('./tools/bash.js')
+    const { createBashTool } = await import('./tools/bash/index.js')
     const { browserTool } = await import('./tools/browser.js')
 
     let result: any
 
     switch (toolCall.name) {
-      case 'bash':
+      case 'bash': {
+        // 使用新的 BashTool，传入当前会话 ID 以支持持久化 session
+        const bashTool = createBashTool(
+          currentSessionId || `temp_${Date.now()}`,
+          // 确认回调 - 危险命令时显示确认对话框
+          async (command, riskLevel) => {
+            // TODO: 显示确认对话框
+            // 目前默认允许，后续实现对话框
+            console.log(`[BashTool] High risk command requires confirmation: ${command}`)
+            return true
+          }
+        )
         result = await bashTool.execute(toolCall.arguments)
         break
+      }
       case 'browser':
         result = await browserTool.execute(toolCall.arguments)
         break
@@ -614,6 +626,15 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   ws?.close()
+
+  // 清理所有 shell 会话
+  try {
+    const { sessionManager } = await import('./tools/bash/index.js')
+    sessionManager.destroyAll()
+    console.log('[Main] All shell sessions cleaned up')
+  } catch (error) {
+    console.error('[Main] Failed to cleanup shell sessions:', error)
+  }
 })
