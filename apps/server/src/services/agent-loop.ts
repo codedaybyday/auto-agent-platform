@@ -62,6 +62,12 @@ export class AgentLoop extends EventEmitter {
    * Observation -> Thought -> Action -> (Repeat)
    */
   async run(userInput: string): Promise<void> {
+    console.log(`[AgentLoop] ========== 开始新任务 ==========`)
+    console.log(`[AgentLoop] 输入: ${userInput.substring(0, 100)}${userInput.length > 100 ? '...' : ''}`)
+    console.log(`[AgentLoop] 会话ID: ${this.state.sessionId}`)
+    console.log(`[AgentLoop] 模型: ${this.config.model}`)
+    console.log(`[AgentLoop] 是否本地模型: ${this.llmClient.isLocal}`)
+
     // 初始化
     this.state.status = 'running'
     this.state.iteration = 0
@@ -98,16 +104,29 @@ export class AgentLoop extends EventEmitter {
 
         // Step 1: Observation（构建上下文）
         const context = this.buildContext()
+        console.log(`[AgentLoop] 迭代 ${this.state.iteration} - 构建上下文: ${context.length} 条消息`)
 
         // Step 2: Thought（LLM 思考）
+        console.log(`[AgentLoop] 调用 LLM...`)
         const llmResponse = await this.callLLM(context)
+        console.log(`[AgentLoop] LLM 响应:`, {
+          contentLength: llmResponse.content?.length || 0,
+          toolCallsCount: llmResponse.toolCalls?.length || 0,
+          hasToolCalls: !!llmResponse.toolCalls && llmResponse.toolCalls.length > 0
+        })
 
         // Step 3: 判断是 Action 还是 Final Answer
         if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
           // 需要执行工具（Action）
           this.state.status = 'waiting_tool'
+          console.log(`[AgentLoop] 检测到 ${llmResponse.toolCalls.length} 个工具调用`)
 
           for (const toolCall of llmResponse.toolCalls) {
+            console.log('[AgentLoop] 工具信息:', toolCall)
+            console.log(`[AgentLoop] 执行工具: ${toolCall.name}`, {
+              arguments: JSON.stringify(toolCall.arguments).substring(0, 200)
+            })
+
             // 通知前端工具开始执行
             this.emit('tool_start', {
               toolCall,
@@ -116,6 +135,12 @@ export class AgentLoop extends EventEmitter {
 
             // 执行工具（可能走 WebSocket 到客户端）
             const result = await this.executeTool(toolCall)
+            console.log(`[AgentLoop] 工具执行结果:`, {
+              success: result.success,
+              hasData: !!result.data,
+              hasError: !!result.error,
+              executionTime: result.executionTime
+            })
 
             // 添加工具结果到上下文（Observation）
             this.addToolResult(toolCall, result)
@@ -129,15 +154,17 @@ export class AgentLoop extends EventEmitter {
           }
 
           // LOOP CONTINUE: 带着工具结果继续循环
+          console.log(`[AgentLoop] 继续循环，等待 LLM 处理工具结果`)
           continue
         } else {
           // 得到最终答案，结束循环
-          // 注意：assistant 消息已在 callLLM 中添加，这里只需更新状态和 emit 事件
+          console.log(`[AgentLoop] 得到最终答案，结束循环`)
           this.state.status = 'completed'
           this.emit('run_complete', {
             output: llmResponse.content || '',
             timestamp: Date.now()
           })
+          console.log(`[AgentLoop] ========== 任务完成 ==========`)
           break
         }
       }
@@ -152,6 +179,7 @@ export class AgentLoop extends EventEmitter {
       }
     } catch (error) {
       this.state.status = 'error'
+      console.error(`[AgentLoop] 错误:`, error)
 
       // 处理 LLM API 错误，提供友好错误消息
       let friendlyError: Error
@@ -240,7 +268,7 @@ export class AgentLoop extends EventEmitter {
 - file_read/file_write: 读写本地文件
 
 请根据用户的需求决定是否需要使用工具。
-如果需要使用工具，请明确调用；如果可以直接回答，请直接回答。`
+如果需要使用工具，请明确调用；如果可以直接回答，请直接回答。回复尽量用中文`
   }
 
   private buildContext(): Message[] {
@@ -254,8 +282,15 @@ export class AgentLoop extends EventEmitter {
   }
 
   private async callLLM(messages: Message[]): Promise<LLMResponse> {
+    console.log(`[AgentLoop] 调用 LLM，消息数: ${messages.length}`)
+
     // 调用 LLM
     const response = await this.llmClient.chat(messages)
+
+    console.log(`[AgentLoop] LLM 返回:`, {
+      contentPreview: response.content?.substring(0, 100) || '(空)',
+      toolCallsCount: response.toolCalls?.length || 0
+    })
 
     // 添加助手消息到历史
     if (response.content || response.toolCalls) {

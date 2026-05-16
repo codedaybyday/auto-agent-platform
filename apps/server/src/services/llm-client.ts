@@ -279,6 +279,7 @@ export class LLMClient {
     const data: any = await response.json()
     const choice = data.choices[0]
 
+    console.log('[LLMClient] 模型原始返回:', JSON.stringify(choice))
     // 某些本地模型可能不返回 tool_calls
     const toolCalls = choice.message?.tool_calls?.map((tool: any) => ({
       id: tool.id,
