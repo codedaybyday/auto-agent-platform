@@ -96,7 +96,7 @@ function connectToServer(): Promise<void> {
       }
     })
 
-    ws.on('error', (error) => {
+    ws.on('error', (error: Error) => {
       console.error('[Main] WebSocket error:', error)
       reject(error)
     })
@@ -186,7 +186,7 @@ function handleServerMessage(message: any): void {
         mainWindow?.webContents.send('agent:sessions_updated', Array.from(sessions.values()))
 
         // 通知等待的 init 调用
-        if (pendingSessionResolve) {
+        if (pendingSessionResolve && currentSessionId) {
           pendingSessionResolve(currentSessionId)
           pendingSessionResolve = null
         }
@@ -201,8 +201,8 @@ async function executeToolAndReport(message: any): Promise<void> {
 
   try {
     // 动态导入工具
-    const { bashTool } = await import('./tools/bash')
-    const { browserTool } = await import('./tools/browser')
+    const { bashTool } = await import('./tools/bash.js')
+    const { browserTool } = await import('./tools/browser.js')
 
     let result: any
 

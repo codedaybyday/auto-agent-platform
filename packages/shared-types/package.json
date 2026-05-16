@@ -13,11 +13,13 @@
     }
   },
   "scripts": {
-    "build": "echo 'No build needed for pure types package'",
+    "build": "tsup src/index.ts --dts --format esm",
+    "dev": "tsup src/index.ts --dts --format esm --watch",
     "type-check": "tsc --noEmit",
-    "clean": "echo 'No dist to clean'"
+    "clean": "rm -rf dist"
   },
   "devDependencies": {
+    "tsup": "^8.5.1",
     "typescript": "^5.5.2"
   }
 }
