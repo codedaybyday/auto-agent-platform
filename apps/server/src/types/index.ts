@@ -88,6 +88,7 @@ export enum MessageType {
   TOOL_PROGRESS = 'tool.progress',
   TOOL_RESULT = 'tool.result',
   TOOL_ERROR = 'tool.error',
+  TOOL_CLEANUP = 'tool.cleanup',
 
   // 状态同步
   STATE_SYNC = 'state.sync',

@@ -33,6 +33,7 @@ export class AgentLoop extends EventEmitter {
   private toolBridge: ToolBridge
   private llmClient: LLMClient
   private userId: string
+  private wsClient: any = null
 
   constructor(
     sessionId: string,
@@ -233,6 +234,62 @@ export class AgentLoop extends EventEmitter {
   }
 
   /**
+   * 清理资源
+   * 通知客户端清理工具，清理 pending 请求
+   */
+  async cleanup(): Promise<void> {
+    console.log(`[AgentLoop ${this.state.sessionId}] Starting cleanup...`)
+
+    // 1. 停止循环
+    this.stop()
+
+    // 2. 清理 ToolBridge 的 pending 请求
+    this.toolBridge.cleanup()
+
+    // 3. 通知客户端清理本地工具（发送 WebSocket 消息）
+    try {
+      await this.notifyClientCleanup()
+    } catch (error) {
+      console.error(`[AgentLoop ${this.state.sessionId}] Failed to notify client cleanup:`, error)
+    }
+
+    // 4. 移除所有监听器
+    this.removeAllListeners()
+
+    console.log(`[AgentLoop ${this.state.sessionId}] Cleanup completed`)
+  }
+
+  /**
+   * 通知客户端清理本地工具资源
+   */
+  private async notifyClientCleanup(): Promise<void> {
+    console.log(`[AgentLoop ${this.state.sessionId}] Notifying client to cleanup tools`)
+
+    if (!this.wsClient) {
+      console.log(`[AgentLoop ${this.state.sessionId}] No WebSocket client bound, skipping notification`)
+      return
+    }
+
+    // 发送清理命令到客户端
+    const cleanupMessage = {
+      type: 'tool.cleanup' as import('../types/index.js').MessageType,
+      messageId: this.generateId(),
+      timestamp: Date.now(),
+      sessionId: this.state.sessionId,
+      payload: {
+        reason: 'session_closed'
+      }
+    }
+
+    try {
+      this.wsClient.socket?.send(JSON.stringify(cleanupMessage))
+      console.log(`[AgentLoop ${this.state.sessionId}] Cleanup notification sent to client`)
+    } catch (error) {
+      console.error(`[AgentLoop ${this.state.sessionId}] Failed to send cleanup notification:`, error)
+    }
+  }
+
+  /**
    * 获取当前状态
    */
   getState(): LoopState {
@@ -257,6 +314,7 @@ export class AgentLoop extends EventEmitter {
    * 绑定 WebSocket 客户端（用于工具调用）
    */
   bindWebSocket(wsClient: any): void {
+    this.wsClient = wsClient
     this.toolBridge.bindWebSocket(wsClient)
   }
 

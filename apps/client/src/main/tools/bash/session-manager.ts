@@ -5,6 +5,7 @@
 
 import { spawn, type ChildProcess } from 'child_process'
 import { BashOutput, ShellSessionState } from './types.js'
+import { processRegistry } from './process-registry.js'
 
 export class ShellSessionManager {
   private sessions = new Map<string, ShellSessionState>()
@@ -47,6 +48,9 @@ export class ShellSessionManager {
       startTime: Date.now(),
       lastActivity: Date.now()
     }
+
+    // 注册到进程管理器
+    processRegistry.register(`shell-${sessionId}`, sessionId, 'bash -i', shell)
 
     // 初始化输出缓冲区
     this.outputBuffer.set(sessionId, { stdout: '', stderr: '' })
@@ -243,6 +247,8 @@ export class ShellSessionManager {
       this.sessions.delete(sessionId)
       this.outputBuffer.delete(sessionId)
     }
+    // 清理进程注册表
+    processRegistry.cleanupSession(sessionId)
   }
 
   /**
