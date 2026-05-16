@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
-import { ModelConfig } from '../config/models'
+import type { ModelConfig } from '@auto-agent/shared-types'
 
 /**
  * LLM 消息类型
