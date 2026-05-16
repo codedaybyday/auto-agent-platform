@@ -402,6 +402,47 @@ export class LLMClient {
       {
         type: 'function',
         function: {
+          name: 'browser_ai',
+          description: `Use AI-powered browser automation with natural language instructions.
+This tool provides semantic browser control with automatic element detection, snapshot-based interaction, and enhanced security.
+
+Available operations:
+- "go to [url]": Navigate to a website (e.g., "go to github.com")
+- "click [element]": Click on an element by text or description (e.g., "click Sign in button")
+- "type [text] in [field]": Type text into an input field (e.g., "type hello in search box")
+- "search for [keyword]": Perform a search (e.g., "search for TypeScript tutorials")
+- "scroll up/down": Scroll the page
+- "screenshot": Capture a screenshot
+- "wait [ms]": Wait for a specified time
+- "get page summary": Get a summary of the current page with available elements
+
+You can also use stable references from previous snapshots (e.g., "click ref e5").
+
+This tool is preferred over the basic 'browser' tool for complex tasks requiring intelligent element detection.`,
+          parameters: {
+            type: 'object',
+            properties: {
+              instruction: {
+                type: 'string',
+                description: 'Natural language instruction describing the browser action to perform'
+              },
+              use_snapshot: {
+                type: 'boolean',
+                description: 'Whether to use snapshot-based element references (default: true)',
+                default: true
+              },
+              ref: {
+                type: 'string',
+                description: 'Optional: Stable reference ID from a previous snapshot (e.g., "e5", "ax3")'
+              }
+            },
+            required: ['instruction']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'bash',
           description: 'Execute bash commands',
           parameters: {

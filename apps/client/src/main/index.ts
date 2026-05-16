@@ -1,6 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import type { Message } from '@auto-agent/shared-types'
+// import type { Message } from '@auto-agent/shared-types'
+// @ts-ignore
 import WebSocket from 'ws'
 
 let mainWindow: BrowserWindow | null = null
@@ -116,7 +117,7 @@ function connectToServer(): Promise<void> {
   })
 }
 
-function handleServerMessage(message: any): void {
+async function handleServerMessage(message: any) {
   console.log('[Main] Received:', message.type)
 
   switch (message.type) {
@@ -209,6 +210,7 @@ async function executeToolAndReport(message: any): Promise<void> {
     // 动态导入工具
     const { createBashTool } = await import('./tools/bash/index.js')
     const { browserTool } = await import('./tools/browser.js')
+    const { browserAI } = await import('./tools/browser-ai/index.js')
 
     let result: any
 
@@ -231,6 +233,30 @@ async function executeToolAndReport(message: any): Promise<void> {
       case 'browser':
         result = await browserTool.execute(toolCall.arguments)
         break
+      case 'browser_ai': {
+        // 使用增强版 BrowserAI
+        const { instruction, ref } = toolCall.arguments
+
+        if (ref) {
+          // 如果有 ref，执行点击或输入操作
+          const actionResult = await browserAI.clickByRef(ref)
+          result = actionResult.result
+        } else if (instruction) {
+          // 执行语义化指令
+          const actionResult = await browserAI.semanticAct(instruction)
+
+          // 如果启用了 snapshot，在结果中附加页面摘要
+          if (browserAI.getCurrentSnapshot() && instruction.toLowerCase().includes('get page summary')) {
+            const summary = await browserAI.getPageSummary()
+            result = `${actionResult.result}\n\nPage Summary:\n${summary}`
+          } else {
+            result = actionResult.result
+          }
+        } else {
+          throw new Error('browser_ai tool requires either "instruction" or "ref" parameter')
+        }
+        break
+      }
       default:
         throw new Error(`Unknown tool: ${toolCall.name}`)
     }
@@ -287,7 +313,12 @@ async function cleanupSessionTools(sessionId: string | undefined): Promise<void>
     // 清理浏览器（如果有）
     const { browserTool } = await import('./tools/browser.js')
     await browserTool.close()
-    console.log(`[Main] Browser closed for session ${targetSessionId}`)
+    console.log(`[Main] Browser (legacy) closed for session ${targetSessionId}`)
+
+    // 清理 BrowserAI
+    const { browserAI } = await import('./tools/browser-ai/index.js')
+    await browserAI.close()
+    console.log(`[Main] BrowserAI closed for session ${targetSessionId}`)
 
     // 清理进程注册表
     const { processRegistry } = await import('./tools/bash/process-registry.js')
