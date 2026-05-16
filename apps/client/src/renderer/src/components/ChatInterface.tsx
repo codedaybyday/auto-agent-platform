@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './ChatInterface.css'
 
 interface ToolCall {
@@ -65,7 +67,7 @@ function ToolResultDisplay({ result }: { result: ToolResult }): JSX.Element {
   )
 }
 
-function MessageBubble({ message }: { message: Message }): JSX.Element {
+function MessageBubble({ message, isLoading }: { message: Message; isLoading?: boolean }): JSX.Element {
   const isUser = message.role === 'user'
 
   return (
@@ -75,13 +77,19 @@ function MessageBubble({ message }: { message: Message }): JSX.Element {
         <span className="message-time">{formatTime(message.timestamp)}</span>
       </div>
 
-      {message.content && (
+      {message.content ? (
         <div className="message-content">
-          {message.content.split('\n').map((line, i) => (
-            <p key={i}>{line || <br />}</p>
-          ))}
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
         </div>
-      )}
+      ) : isLoading ? (
+        <div className="message-content loading">
+          <span className="loading-dot"></span>
+          <span className="loading-dot"></span>
+          <span className="loading-dot"></span>
+        </div>
+      ) : null}
 
       {message.tool_calls && message.tool_calls.length > 0 && (
         <div className="tool-calls">
@@ -147,7 +155,12 @@ export function ChatInterface({
       <div className="chat-header">
         <h2>Agent 对话</h2>
         <div className="chat-actions">
-          {isProcessing && <span className="processing-indicator">思考中...</span>}
+          {isProcessing && (
+            <span className="processing-indicator">
+              <span className="processing-spinner"></span>
+              AI 思考中
+            </span>
+          )}
           <button className="clear-btn" onClick={onClearHistory} disabled={isProcessing}>
             清除历史
           </button>
@@ -168,9 +181,23 @@ export function ChatInterface({
             </ul>
           </div>
         ) : (
-          messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))
+          <>
+            {messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
+            ))}
+            {isProcessing && messages[messages.length - 1]?.role !== 'assistant' && (
+              <MessageBubble
+                key="loading"
+                message={{
+                  id: 'loading',
+                  role: 'assistant',
+                  content: '',
+                  timestamp: Date.now()
+                }}
+                isLoading={true}
+              />
+            )}
+          </>
         )}
         <div ref={messagesEndRef} />
       </div>
