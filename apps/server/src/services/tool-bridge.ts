@@ -223,6 +223,22 @@ export class ToolBridge {
     }
   }
 
+  /**
+   * 清理所有 pending 请求
+   */
+  cleanup(): void {
+    console.log(`[ToolBridge ${this.sessionId}] Cleaning up ${this.pendingRequests.size} pending requests`)
+
+    // 拒绝所有挂起的请求
+    for (const [requestId, pending] of this.pendingRequests) {
+      pending.reject(new Error('Session closed, tool execution cancelled'))
+    }
+    this.pendingRequests.clear()
+
+    // 解绑 WebSocket
+    this.wsClient = null
+  }
+
   // ==================== 远程工具实现 ====================
 
   private async executeHttpRequest(args: any): Promise<any> {

@@ -170,11 +170,10 @@ export class SessionManager {
     const session = this.sessionMetadata.get(sessionId)
     if (!session) return
 
-    // 清理 Agent Loop
+    // 清理 Agent Loop（包括通知客户端清理工具）
     const agentLoop = this.localSessions.get(sessionId)
     if (agentLoop) {
-      agentLoop.stop()
-      agentLoop.removeAllListeners()
+      await agentLoop.cleanup()
     }
 
     // 清理索引

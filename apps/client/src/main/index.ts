@@ -168,6 +168,12 @@ function handleServerMessage(message: any): void {
       executeToolAndReport(message)
       break
 
+    case 'tool.cleanup':
+      // 服务端通知清理本地工具资源
+      console.log('[Main] Server requested tool cleanup for session:', message.sessionId)
+      await cleanupSessionTools(message.sessionId)
+      break
+
     case 'session.create_ack':
       if (message.payload?.session?.id) {
         const session = message.payload.session
@@ -257,6 +263,40 @@ async function executeToolAndReport(message: any): Promise<void> {
         error: error instanceof Error ? error.message : String(error)
       }
     }))
+  }
+}
+
+/**
+ * 清理会话的本地工具资源
+ */
+async function cleanupSessionTools(sessionId: string | undefined): Promise<void> {
+  const targetSessionId = sessionId || currentSessionId
+  if (!targetSessionId) {
+    console.log('[Main] No session ID for cleanup, skipping')
+    return
+  }
+
+  console.log(`[Main] Cleaning up tools for session: ${targetSessionId}`)
+
+  try {
+    // 导入并清理 bash session
+    const { sessionManager } = await import('./tools/bash/index.js')
+    sessionManager.destroy(targetSessionId)
+    console.log(`[Main] Bash session ${targetSessionId} destroyed`)
+
+    // 清理浏览器（如果有）
+    const { browserTool } = await import('./tools/browser.js')
+    await browserTool.close()
+    console.log(`[Main] Browser closed for session ${targetSessionId}`)
+
+    // 清理进程注册表
+    const { processRegistry } = await import('./tools/bash/process-registry.js')
+    processRegistry.cleanupSession(targetSessionId)
+    console.log(`[Main] Process registry cleaned for session ${targetSessionId}`)
+
+    console.log(`[Main] Tools cleanup completed for session: ${targetSessionId}`)
+  } catch (error) {
+    console.error(`[Main] Failed to cleanup tools for session ${targetSessionId}:`, error)
   }
 }
 
