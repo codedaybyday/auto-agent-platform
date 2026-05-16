@@ -1,2 +1,2 @@
-export { bashTool } from './bash'
-export { browserTool } from './browser'
+export { BashTool, createBashTool, bashTool, sessionManager } from './bash/index.js'
+export { browserTool } from './browser.js'
