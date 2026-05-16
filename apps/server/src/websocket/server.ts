@@ -276,6 +276,10 @@ export class WebSocketGateway {
           await this.handleToolResult(connection, message)
           break
 
+        case 'tool.error':
+          await this.handleToolError(connection, message)
+          break
+
         case 'ping':
           this.sendToConnection(connection.id, {
             type: 'pong' as MessageType,
@@ -404,17 +408,52 @@ export class WebSocketGateway {
    * 处理工具执行结果（客户端返回）
    */
   private async handleToolResult(connection: WSConnection, message: WSMessage): Promise<void> {
-    const { toolCallId, success, data, error, metadata } = message.payload || {}
-    const { sessionId } = message
+    const { toolCallId, success, data, error, metadata, executionTime } = message.payload || {}
+    const { sessionId, messageId } = message
 
     if (!sessionId) return
 
     const agentLoop = this.sessionManager.getAgentLoop(sessionId)
     if (!agentLoop) return
 
-    // 找到对应的 tool bridge 并返回结果
-    // 这里简化处理，实际应该通过 requestId 匹配
-    console.log(`[WebSocket] Tool result for session ${sessionId}:`, { toolCallId, success })
+    // 构建 ToolResult 并传递给 ToolBridge
+    const toolResult: import('../types/index.js').ToolResult = {
+      toolCallId: toolCallId || messageId,
+      success: success ?? false,
+      data,
+      error,
+      executionTime: executionTime || 0,
+      metadata
+    }
+
+    // 通过 AgentLoop 的 ToolBridge 处理结果
+    // 使用 messageId 作为 requestId 匹配
+    const toolBridge = (agentLoop as any).toolBridge
+    if (toolBridge && toolBridge.handleToolResult) {
+      toolBridge.handleToolResult(messageId, toolResult)
+      console.log(`[WebSocket] Tool result passed to AgentLoop for session ${sessionId}`)
+    } else {
+      console.warn(`[WebSocket] ToolBridge not found for session ${sessionId}`)
+    }
+  }
+
+  private async handleToolError(connection: WSConnection, message: WSMessage): Promise<void> {
+    const { toolCallId, error } = message.payload || {}
+    const { sessionId, messageId } = message
+
+    if (!sessionId) return
+
+    const agentLoop = this.sessionManager.getAgentLoop(sessionId)
+    if (!agentLoop) return
+
+    // 传递错误给 ToolBridge
+    const toolBridge = (agentLoop as any).toolBridge
+    if (toolBridge && toolBridge.handleToolError) {
+      toolBridge.handleToolError(messageId, error || 'Unknown error')
+      console.log(`[WebSocket] Tool error passed to AgentLoop for session ${sessionId}`)
+    } else {
+      console.warn(`[WebSocket] ToolBridge not found for session ${sessionId}`)
+    }
   }
 
   /**

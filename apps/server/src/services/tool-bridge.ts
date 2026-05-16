@@ -88,7 +88,8 @@ export class ToolBridge {
     }
 
     const startTime = Date.now()
-    const requestId = this.generateId()
+    // 使用 toolCall.id 作为 requestId，以便客户端返回时能正确匹配
+    const requestId = toolCall.id
 
     try {
       // 发送工具执行请求到客户端

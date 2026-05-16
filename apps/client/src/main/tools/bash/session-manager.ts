@@ -146,11 +146,13 @@ export class ShellSessionManager {
       // 超时处理
       const timeoutId = setTimeout(() => {
         if (!markerFound) {
+          // 终止进程
+          session.process.kill('SIGTERM')
           cleanup()
           resolve(this.buildResult(
             session,
             stdout,
-            stderr + '\n[Timeout]',
+            stderr + '\n[Timeout: command execution exceeded ' + timeout + 'ms]',
             -1,
             startTime
           ))
