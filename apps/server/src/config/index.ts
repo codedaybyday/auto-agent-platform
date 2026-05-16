@@ -31,10 +31,14 @@ export const config = {
     url: process.env.REDIS_URL || 'redis://localhost:6379'
   },
 
-  // LLM 配置（支持 OpenAI 兼容格式）
+  // LLM 配置（支持 OpenAI 兼容格式，包括 Ollama 本地部署）
   llm: {
     model: process.env.LLM_MODEL || 'gpt-4',
     apiKey: process.env.LLM_API_KEY || '',
-    baseURL: process.env.LLM_BASE_URL || 'https://api.openai.com/v1'
+    baseURL: process.env.LLM_BASE_URL || 'https://api.openai.com/v1',
+    // Ollama 特定配置
+    provider: (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'ollama' | 'anthropic',
+    // Ollama 默认地址: http://localhost:11434/v1
+    isLocal: process.env.LLM_BASE_URL?.includes('localhost') || process.env.LLM_BASE_URL?.includes('127.0.0.1') || false
   }
 }

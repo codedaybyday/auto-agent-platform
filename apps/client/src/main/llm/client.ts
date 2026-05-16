@@ -52,6 +52,27 @@ export interface LLMResponse {
 }
 
 /**
+ * LLM Provider 类型
+ */
+export type LLMProvider = 'anthropic' | 'openai' | 'ollama' | 'custom'
+
+/**
+ * 检测 LLM 提供商类型
+ */
+export function detectProvider(baseURL: string): LLMProvider {
+  if (baseURL.includes('localhost:11434') || baseURL.includes('127.0.0.1:11434')) {
+    return 'ollama'
+  }
+  if (baseURL.includes('anthropic') || baseURL.includes('claude')) {
+    return 'anthropic'
+  }
+  if (baseURL.includes('openai.com')) {
+    return 'openai'
+  }
+  return 'custom'
+}
+
+/**
  * LLM 客户端抽象基类
  * 定义所有 LLM 客户端必须实现的接口
  */
@@ -136,16 +157,26 @@ export class MessageApiClient extends LLMClient {
 /**
  * Chat Completion 客户端
  * 实现 OpenAI Chat Completions API 协议
- * 支持 OpenAI、千问、DeepSeek 等兼容该协议的模型
+ * 支持 OpenAI、Ollama、千问、DeepSeek 等兼容该协议的模型
  */
 export class ChatCompletionClient extends LLMClient {
   private client: OpenAI
   private model: string
+  private provider: LLMProvider
 
   constructor(apiKey: string, model: string, baseURL: string) {
     super()
     this.model = model
-    this.client = new OpenAI({ apiKey, baseURL })
+    this.provider = detectProvider(baseURL)
+
+    // Ollama 本地部署时，API Key 可以为空
+    const isLocal = this.provider === 'ollama'
+    const finalApiKey = apiKey || (isLocal ? 'ollama' : '')
+
+    this.client = new OpenAI({
+      apiKey: finalApiKey,
+      baseURL
+    })
   }
 
   async chat(
@@ -173,15 +204,21 @@ export class ChatCompletionClient extends LLMClient {
       }
     }
 
+    // Ollama 工具调用支持需要较新版本，默认禁用以确保兼容性
+    // 用户可以通过设置 LLM_ENABLE_TOOLS=true 启用
+    const enableTools = process.env.LLM_ENABLE_TOOLS === 'true' || this.provider !== 'ollama'
+
     // 转换工具定义格式
-    const openaiTools: OpenAI.Chat.ChatCompletionTool[] = tools.map((t) => ({
-      type: 'function',
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters
-      }
-    }))
+    const openaiTools: OpenAI.Chat.ChatCompletionTool[] = enableTools
+      ? tools.map((t) => ({
+          type: 'function',
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }
+        }))
+      : []
 
     const response = await this.client.chat.completions.create({
       model: this.model,
@@ -216,7 +253,15 @@ export class ChatCompletionClient extends LLMClient {
  * @returns 对应的 LLMClient 实例
  */
 export function createLLMClient(config: ModelConfig, apiKey: string): LLMClient {
-  // 根据协议类型选择客户端
+  // 检测提供商类型
+  const provider = detectProvider(config.baseURL)
+
+  // Ollama 使用 OpenAI 兼容接口
+  if (provider === 'ollama' || config.protocol === 'openai-chat-completion') {
+    return new ChatCompletionClient(apiKey, config.model, config.baseURL)
+  }
+
+  // Anthropic Messages API
   if (config.protocol === 'anthropic-messages') {
     return new MessageApiClient(apiKey, config.model, config.baseURL)
   }

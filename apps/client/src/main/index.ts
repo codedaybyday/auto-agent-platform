@@ -230,9 +230,10 @@ async function executeToolAndReport(message: any): Promise<void> {
     }
 
     // 返回结果给服务端
+    // 使用 toolCall.id 作为 messageId，以便服务端匹配 pending 请求
     ws?.send(JSON.stringify({
       type: 'tool.result',
-      messageId: generateId(),
+      messageId: toolCall.id,
       timestamp: Date.now(),
       sessionId: currentSessionId,
       payload: {
@@ -247,7 +248,7 @@ async function executeToolAndReport(message: any): Promise<void> {
 
     ws?.send(JSON.stringify({
       type: 'tool.error',
-      messageId: generateId(),
+      messageId: toolCall.id,
       timestamp: Date.now(),
       sessionId: currentSessionId,
       payload: {
@@ -601,7 +602,7 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.auto-agent.desktop')
   }
@@ -611,6 +612,14 @@ app.whenReady().then(() => {
 
   // 启动时连接服务端
   connectToServer().catch(console.error)
+
+  // 运行 Bash 工具测试
+  try {
+    const { testBashTool } = await import('./test-bash.js')
+    await testBashTool()
+  } catch (error) {
+    console.error('[Main] Bash tool test failed:', error)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

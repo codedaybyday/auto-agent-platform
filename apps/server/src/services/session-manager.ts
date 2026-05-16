@@ -4,6 +4,7 @@
  */
 
 import { AgentLoop } from './agent-loop.js'
+import { config } from '../config/index.js'
 import type { Session, SessionContext, Message } from '../types/index.js'
 
 interface SessionConfig {
@@ -59,14 +60,18 @@ export class SessionManager {
       updatedAt: now,
       messages: [],
       metadata: {
-        model: 'claude-3-5-sonnet-20241022',
+        model: config.llm.model,
         totalTokens: 0,
         toolUsageCount: 0
       }
     }
 
-    // 创建 Agent Loop
-    const agentLoop = new AgentLoop(sessionId, userId)
+    // 创建 Agent Loop，传入 LLM 配置
+    const agentLoop = new AgentLoop(sessionId, userId, {
+      model: config.llm.model,
+      baseURL: config.llm.baseURL,
+      systemPrompt: undefined // 使用默认系统提示词
+    })
 
     // 存储
     this.localSessions.set(sessionId, agentLoop)

@@ -14,7 +14,7 @@ import type {
   AgentError
 } from '../types/index.js'
 import { ToolBridge } from './tool-bridge.js'
-import { LLMClient } from './llm-client.js'
+import { LLMClient, LLMAPIError } from './llm-client.js'
 
 export interface AgentLoopEvents {
   'run_start': { input: string; timestamp: number }
@@ -73,6 +73,18 @@ export class AgentLoop extends EventEmitter {
     })
 
     this.emit('run_start', { input: userInput, timestamp: Date.now() })
+
+    // 如果使用 Ollama 本地模型，先检查连接
+    if (this.llmClient.isLocal) {
+      const checkResult = await this.llmClient.checkOllamaConnection()
+      if (!checkResult.ok) {
+        this.state.status = 'error'
+        const error = new LLMAPIError(checkResult.message, 503)
+        this.emit('run_error', { error, timestamp: Date.now() })
+        throw error
+      }
+      console.log(`[AgentLoop] ${checkResult.message}`)
+    }
 
     try {
       // ========== LOOP START ==========
@@ -140,11 +152,27 @@ export class AgentLoop extends EventEmitter {
       }
     } catch (error) {
       this.state.status = 'error'
+
+      // 处理 LLM API 错误，提供友好错误消息
+      let friendlyError: Error
+      if (error instanceof LLMAPIError) {
+        friendlyError = error
+      } else if (error instanceof Error) {
+        // 检查是否是配额超限错误（某些情况下可能不是 LLMAPIError）
+        if (error.message.includes('429') || error.message.includes('达到使用量上限')) {
+          friendlyError = new LLMAPIError('API 使用量已达上限，请检查您的账户余额或联系服务提供商', 429)
+        } else {
+          friendlyError = error
+        }
+      } else {
+        friendlyError = new Error(String(error))
+      }
+
       this.emit('run_error', {
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: friendlyError,
         timestamp: Date.now()
       })
-      throw error
+      throw friendlyError
     }
   }
 
