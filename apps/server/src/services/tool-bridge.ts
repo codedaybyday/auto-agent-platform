@@ -43,7 +43,7 @@ export class ToolBridge {
    * 判断工具类型
    */
   private classifyTool(toolName: string): ToolType {
-    const localTools = ['browser', 'bash', 'file_read', 'file_write']
+    const localTools = ['browser', 'browser_ai', 'bash', 'file_read', 'file_write']
     const remoteTools = ['http_request', 'search_api', 'weather']
 
     if (localTools.includes(toolName)) return ToolType.LOCAL

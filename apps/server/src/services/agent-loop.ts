@@ -321,11 +321,20 @@ export class AgentLoop extends EventEmitter {
   private getDefaultSystemPrompt(): string {
     return `你是一个智能助手，可以帮助用户完成各种任务。
 你可以使用以下工具：
-- browser: 控制浏览器访问网页、点击元素、输入文字、截图等
+- browser: 基础浏览器控制（使用精确的选择器）
+- browser_ai: AI 增强版浏览器控制（使用自然语言指令，更智能的元素定位）
 - bash: 执行系统命令
 - file_read/file_write: 读写本地文件
 
+browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然语言指令如：
+- "go to github.com"
+- "click Sign in button"
+- "type hello in search box"
+- "search for TypeScript tutorials"
+- "get page summary" (获取页面结构摘要)
+
 请根据用户的需求决定是否需要使用工具。
+如果需要使用工具，优先使用 browser_ai 进行浏览器操作，除非需要精确的选择器控制。
 如果需要使用工具，请明确调用；如果可以直接回答，请直接回答。回复尽量用中文`
   }
 
