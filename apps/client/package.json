@@ -22,6 +22,7 @@
     "@electron-toolkit/utils": "^2.0.1",
     "@mtfe/sso-web-oidc-cli": "^1.4.1",
     "electron-store": "^11.0.2",
+    "encrypted-electron-store": "^0.5.0",
     "keytar": "^7.9.0",
     "playwright": "^1.45.0",
     "react-markdown": "^10.1.0",

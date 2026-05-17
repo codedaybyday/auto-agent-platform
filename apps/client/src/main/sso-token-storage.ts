@@ -1,19 +1,5 @@
 import keytar from 'keytar';
-// const Store = require('electron-store');
-
-class Store {
-  declare map: Map<string, string>;
-  constructor({name}: {name: string}) {
-    this.map = new Map();
-  }
-  get (key: string) {
-    return this.map.get(key);
-  }
-
-  set (key: string, val: string) {
-    return this.map.set(key, val);
-  }
-}
+import EncryptedStore from 'encrypted-electron-store/main';
 
 /**
  * SSO Token 安全存储器示例，仅供参考
@@ -25,20 +11,17 @@ class Store {
  */
 class SSOTokenStorage {
   private serviceName: string;
-  private store: Store;
+  private store: ReturnType<typeof EncryptedStore.create<any>>;
   private TOKEN_KEY: string;
 
   constructor() {
+
     // 应用服务名称，用于在系统密钥链中标识
-    this.serviceName = 'sso-electron-demo';
-
-    // 使用 electron-store 存储非敏感的元数据
-    this.store = new Store({
-      name: 'sso-token-auto-agent',
-    });
-
+    this.serviceName = 'sso-electron-auto-agent';
+    this.store = EncryptedStore.create<any>();
     // Token 存储的键名
-    this.TOKEN_KEY = 'sso_token_info';
+    this.TOKEN_KEY = '';
+    this.store.set(this.TOKEN_KEY, {});
   }
 
   /**

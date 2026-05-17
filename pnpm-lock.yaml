@@ -38,6 +38,9 @@ importers:
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
+      encrypted-electron-store:
+        specifier: ^0.5.0
+        version: 0.5.0
       keytar:
         specifier: ^7.9.0
         version: 7.9.0
@@ -1642,6 +1645,10 @@ packages:
   encodeurl@2.0.0:
     resolution: {integrity: sha1-e46omAd9fkCdOsRUdOo46vCFelg=, tarball: http://r.npm.sankuai.com/encodeurl/download/encodeurl-2.0.0.tgz}
     engines: {node: '>= 0.8'}
+
+  encrypted-electron-store@0.5.0:
+    resolution: {integrity: sha512-JDfXcSyPPnr8QA1pJWf2yx1bJFYYtGmT7x4KYb1QR7tZT6eqwfbK2vn5ukOM1NRhmbg6+TdHsbnDwKBWl8TecQ==, tarball: https://registry.npmjs.org/encrypted-electron-store/-/encrypted-electron-store-0.5.0.tgz}
+    engines: {node: '>=22.0.0', npm: '>=10.0.0'}
 
   end-of-stream@1.4.5:
     resolution: {integrity: sha1-c0TXEd6kDgt0q8LtSXeHQ8ztsIw=, tarball: http://r.npm.sankuai.com/end-of-stream/download/end-of-stream-1.4.5.tgz}
@@ -5127,6 +5134,8 @@ snapshots:
   emoji-regex@9.2.2: {}
 
   encodeurl@2.0.0: {}
+
+  encrypted-electron-store@0.5.0: {}
 
   end-of-stream@1.4.5:
     dependencies:
