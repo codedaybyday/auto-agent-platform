@@ -51,6 +51,31 @@ function App(): JSX.Element {
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat')
   const [messages, setMessages] = useState<Message[]>([])
   const messagesRef = useRef<Message[]>([])
+  const [isLogin, setIsLogin] = useState(false)
+
+  if (isLogin) {
+    // window.api.agent.login().then(res => {
+    //   if (res.success) {
+    //     setIsLogin(true)
+    //   }
+    // });
+    return (
+      <div className="login-container">
+        <div className="login-card">
+          <div className="login-logo">
+            <div className="login-icon">🤖</div>
+            <h1 className="login-title">Auto Agent</h1>
+            <p className="login-subtitle">智能自动化助手</p>
+          </div>
+          <div className="login-content">
+            <div className="login-spinner"></div>
+            <p className="login-text">等待登录...</p>
+            <p className="login-hint">请完成授权以继续使用</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     messagesRef.current = messages

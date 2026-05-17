@@ -19,6 +19,6 @@
       "@auto-agent/shared-utils": ["../../packages/shared-utils/src/index.ts"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "../client/src/main/sso-token-storage.ts"],
   "exclude": ["node_modules", "dist"]
 }

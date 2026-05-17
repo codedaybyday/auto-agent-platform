@@ -50,7 +50,7 @@ export class AgentLoop extends EventEmitter {
     }
     this.config = {
       baseURL: config.baseURL,
-      maxIterations: config.maxIterations || 50,
+      maxIterations: config.maxIterations || 10,
       model: config.model || 'gpt-4',
       systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
     }
@@ -333,6 +333,11 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
 - "type hello in search box"
 - "search for TypeScript tutorials"
 - "get page summary" (获取页面结构摘要)
+
+**重要规则**：
+1. 如果用户要求"搜索XXX"或"打开XXX网站"，当成功到达目标网站后，任务即完成，无需进一步分析页面内容
+2. 除非用户明确要求"分析页面"或"提取信息"，否则到达目标后应直接返回结果
+3. 避免无意义的重复分析，每个任务最多 10 步
 
 请根据用户的需求决定是否需要使用工具。
 如果需要使用工具，优先使用 browser_ai 进行浏览器操作，除非需要精确的选择器控制。

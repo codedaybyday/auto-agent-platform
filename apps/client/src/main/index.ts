@@ -3,6 +3,8 @@ import { join } from 'path'
 // import type { Message } from '@auto-agent/shared-types'
 // @ts-ignore
 import WebSocket from 'ws'
+import { SSOCliClient, SSOAccessEnvType } from '@mtfe/sso-web-oidc-cli'
+import ssoTokenStorage from './sso-token-storage'
 
 let mainWindow: BrowserWindow | null = null
 let ws: WebSocket | null = null
@@ -18,6 +20,20 @@ const sessions: Map<string, { id: string; title: string; updatedAt: number; mess
 // 后端服务地址
 const SERVER_URL = process.env.VITE_SERVER_URL || 'ws://localhost:3001'
 const HTTP_BASE_URL = SERVER_URL.replace(/^ws/, 'http').replace(/\/ws$/, '')
+
+let ssoClient: SSOCliClient;
+
+function initSSOClient() {
+  const accessEnv = SSOAccessEnvType.test; // 或 SSOAccessEnvType.product
+  
+  ssoClient = new SSOCliClient({
+    clientId: '3e64c59645', // 测试环境
+    accessEnv,
+    localPortList: [3003, 5174], // 自定义
+    isDebug: process.env.NODE_ENV === 'development',
+    tokenStorage: ssoTokenStorage,
+  });
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -42,7 +58,8 @@ function createWindow(): void {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // shell.openExternal(details.url)
+    mainWindow?.loadURL(details.url);
     return { action: 'deny' }
   })
 
@@ -684,6 +701,66 @@ function generateId(): string {
 }
 
 /**
+ * 绑定 IPC
+ */
+
+function bindIpcEvents() {
+  // ==================== SSO 相关 IPC 处理 ====================
+
+  // 获取用户信息 (whoami)
+  ipcMain.handle('sso:whoami', async () => {
+    try {
+      const result = await ssoClient.whoami();
+      console.debug('whoami result: ', result);
+
+      if (result && result.code === 0 && result.data) {
+        return { success: true, data: result.data, error: null };
+      } else {
+        return { success: false, data: null, error: result?.msg || '获取用户信息失败' };
+      }
+      } catch (error) {
+        console.error('SSO whoami error:', error);
+        return { success: false, data: null, error: error.message };
+      }
+  });
+
+  // SSO 登录
+  ipcMain.handle('sso:login', async () => {
+    try {
+      const result = await ssoClient.login();
+
+      if (result && result.access_token) {
+        return { success: true, error: null };
+      } else {
+        return { success: false, error: '登录失败' };
+      }
+    } catch (error) {
+      console.error('SSO login error:', error);
+      return { success: false, error: error?.msg || error?.message };
+    }
+  });
+
+  // SSO 登出
+  ipcMain.handle('sso:logout', async () => {
+    try {
+      const result = await ssoClient.logout();
+      console.debug('logout result: ', result);
+
+      // 登出成功后清空 token 信息
+      if (result && result.code === 0) {
+        await ssoTokenStorage.clear();
+        console.debug('SSO token 已清空');
+      }
+
+      return { success: true, error: null };
+    } catch (error) {
+      console.error('SSO logout error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+}
+
+/**
  * 简单指令解析（降级方案）
  * 当服务端未解析时，客户端基于关键词匹配
  */
@@ -734,6 +811,8 @@ app.whenReady().then(async () => {
     app.setAppUserModelId('com.auto-agent.desktop')
   }
 
+  initSSOClient()
+  bindIpcEvents()
   createWindow()
   setupAgentHandlers()
 
