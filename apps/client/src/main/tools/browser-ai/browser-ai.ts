@@ -12,7 +12,7 @@
 import { Browser, BrowserContext, Page, chromium, Locator } from 'playwright'
 import { snapshotManager, PageSnapshot, SnapshotFormat } from './browser-snapshot'
 import { BrowserSecurityGuard, defaultSecurityGuard, SecurityError } from './browser-security'
-
+import { DOMSerializer, SerializedDOM, domSerializer } from './dom-serializer'
 export interface PageElement {
   tag: string
   role?: string
@@ -59,7 +59,15 @@ export interface BrowserAIConfig {
   snapshotFormat?: SnapshotFormat
   enableSnapshots?: boolean
   maxRetries?: number
+  // 已移除：LLM 配置移到后端
+  // DOM 序列化配置
+  domSerializer?: {
+    maxElements?: number
+    minElementSize?: number
+  }
 }
+
+// Browser 工具定义已移到后端服务
 
 export class BrowserAI {
   private browser: Browser | null = null
@@ -67,8 +75,10 @@ export class BrowserAI {
   private page: Page | null = null
   private actionHistory: BrowserAction[] = []
   private currentSnapshot: PageSnapshot | null = null
+  private currentDOM: SerializedDOM | null = null
   private config: Required<BrowserAIConfig>
   private securityGuard: BrowserSecurityGuard
+  private domSerializer: DOMSerializer
 
   constructor(config: BrowserAIConfig = {}) {
     this.config = {
@@ -76,9 +86,15 @@ export class BrowserAI {
       securityGuard: config.securityGuard ?? defaultSecurityGuard,
       snapshotFormat: config.snapshotFormat ?? 'role',
       enableSnapshots: config.enableSnapshots ?? true,
-      maxRetries: config.maxRetries ?? 1
+      maxRetries: config.maxRetries ?? 1,
+      domSerializer: config.domSerializer ?? { maxElements: 200, minElementSize: 5 }
     }
     this.securityGuard = this.config.securityGuard
+    this.domSerializer = new DOMSerializer({
+      maxElements: this.config.domSerializer.maxElements,
+      minElementSize: this.config.domSerializer.minElementSize
+    })
+
   }
 
   /**
@@ -129,28 +145,87 @@ export class BrowserAI {
   }
 
   /**
-   * 语义化操作 - 用自然语言描述执行浏览器操作
-   * 支持的操作描述：
-   * - "点击{文本}" / "click on {text}"
-   * - "在{字段}输入{内容}" / "type {text} in {field}"
-   * - "搜索{关键词}" / "search for {keyword}"
-   * - "选择{选项}" / "select {option}"
-   * - "滚动到{元素}" / "scroll to {element}"
+   * 获取当前页面的 DOM 序列化
    */
-  async semanticAct(instruction: string): Promise<{ success: boolean; result: string }> {
+  async getSerializedDOM(): Promise<SerializedDOM> {
     await this.initialize()
     const page = this.page!
 
-    console.log(`[BrowserAI] Semantic action: ${instruction}`)
+    const serialized = await this.domSerializer.serialize(page)
+    this.currentDOM = serialized
 
+    console.log(`[BrowserAI] DOM serialized: ${serialized.stats.finalElements} elements (${serialized.stats.sizeKB}KB)`)
+
+    return serialized
+  }
+
+  /**
+   * 获取当前 DOM 的 LLM 友好格式
+   */
+  async getLLMContext(): Promise<string> {
+    const dom = await this.getSerializedDOM()
+    return this.domSerializer.formatForLLM(dom)
+  }
+
+  /**
+   * 执行浏览器动作
+   * 由后端 LLM 解析指令后调用，接收结构化的动作参数
+   *
+   * @param action 结构化动作对象
+   * @returns 执行结果
+   */
+  async executeBrowserAction(action: {
+    type: string
+    ref?: number
+    description?: string
+    text?: string
+    field?: string
+    url?: string
+    direction?: string
+    amount?: number
+    option?: string
+    timeout?: number
+    fullPage?: boolean
+    schema?: Record<string, any>
+  }): Promise<{ success: boolean; result: string }> {
+    await this.initialize()
+
+    console.log(`[BrowserAI] Executing action: ${action.type}`, action)
+
+    return this.executeAction(action, this.page!)
+  }
+
+  /**
+   * 使用 LLM 进行语义化操作
+   *
+   * 工作流程：
+   * 1. 获取序列化 DOM（五级流水线处理后约 200 个元素）
+   * 2. 构建 LLM 提示词，包含 DOM 上下文和用户指令
+   * 3. 调用 LLM 解析为结构化动作
+   * 4. 执行动作并返回结果
+   */
+  private async findElementByRef(ref: number): Promise<Locator | null> {
+    const page = this.page!
+
+    if (!this.currentDOM) {
+      await this.getSerializedDOM()
+    }
+
+    const element = this.domSerializer.findElement(this.currentDOM!, ref)
+    if (!element) return null
+
+    // 使用坐标定位
+    return page.locator(`xpath=//*[contains(@data-bbox, '${element.bbox.x},${element.bbox.y}')]`).first()
+  }
+
+  /**
+   * 执行解析后的动作（基于 ref ID）
+   */
+  private async executeAction(
+    action: any,
+    page: Page
+  ): Promise<{ success: boolean; result: string }> {
     try {
-      // 1. 先分析页面，获取当前可交互元素
-      const analysis = await this.analyzePage()
-
-      // 2. 解析指令意图
-      const action = this.parseInstruction(instruction, analysis)
-
-      // 3. 执行操作
       switch (action.type) {
         case 'navigate':
           // 安全检查
@@ -180,56 +255,78 @@ export class BrowserAI {
           return { success: true, result: `Navigated to ${page.url()}` }
 
         case 'click':
-          const clickTarget = await this.findElement(action.target, analysis)
+          // 使用 ref 或 description 查找元素
+          let clickTarget: Locator | null = null
+          if (action.ref !== undefined) {
+            clickTarget = await this.findElementByRef(action.ref)
+          }
+          if (!clickTarget && action.description) {
+            // 降级到描述查找
+            const match = this.domSerializer.findElementByDescription(
+              this.currentDOM!,
+              action.description
+            )
+            if (match) {
+              clickTarget = await this.findElementByRef(match.id)
+            }
+          }
           if (!clickTarget) {
-            return { success: false, result: `Element not found: ${action.target}` }
+            return { success: false, result: `Element not found: ref=${action.ref}, desc=${action.description}` }
           }
           await clickTarget.click()
           await page.waitForLoadState('networkidle')
-          this.recordAction({ action: 'click', params: { target: action.target } })
-          return { success: true, result: `Clicked on "${action.target}"` }
+          this.recordAction({ action: 'click', params: { ref: action.ref, description: action.description } })
+          return { success: true, result: `Clicked on element [${action.ref}]` }
 
         case 'type':
-          const inputTarget = await this.findInputField(action.field, analysis)
+          let inputTarget: Locator | null = null
+          if (action.ref !== undefined) {
+            inputTarget = await this.findElementByRef(action.ref)
+          }
+          if (!inputTarget && action.field) {
+            const match = this.domSerializer.findElementByDescription(
+              this.currentDOM!,
+              action.field
+            )
+            if (match) {
+              inputTarget = await this.findElementByRef(match.id)
+            }
+          }
           if (!inputTarget) {
-            return { success: false, result: `Input field not found: ${action.field}` }
+            return { success: false, result: `Input field not found: ref=${action.ref}, field=${action.field}` }
           }
           await inputTarget.fill(action.text)
-          this.recordAction({ action: 'type', params: { field: action.field, text: action.text } })
-          return { success: true, result: `Typed "${action.text}" into "${action.field}"` }
+          this.recordAction({ action: 'type', params: { ref: action.ref, text: action.text } })
+          return { success: true, result: `Typed "${action.text}" into element [${action.ref}]` }
 
-        case 'search':
-          // 智能搜索：找到搜索框，输入内容，提交
-          const searchInput = await this.findSearchField(analysis)
-          if (!searchInput) {
-            return { success: false, result: 'Search field not found' }
+        case 'select':
+          let selectTarget: Locator | null = null
+          if (action.ref !== undefined) {
+            selectTarget = await this.findElementByRef(action.ref)
           }
-          await searchInput.fill(action.keyword)
-
-          // 尝试找到搜索按钮或直接回车
-          const searchButton = await this.findSearchButton(analysis)
-          if (searchButton) {
-            await searchButton.click()
-          } else {
-            await searchInput.press('Enter')
+          if (!selectTarget) {
+            return { success: false, result: `Select field not found: ref=${action.ref}` }
           }
-          await page.waitForLoadState('networkidle')
-          this.recordAction({ action: 'type', params: { keyword: action.keyword } })
-          return { success: true, result: `Searched for "${action.keyword}"` }
+          await selectTarget.selectOption(action.option)
+          this.recordAction({ action: 'select', params: { ref: action.ref, option: action.option } })
+          return { success: true, result: `Selected "${action.option}" in element [${action.ref}]` }
 
         case 'scroll':
-          if (action.direction === 'to_element') {
-            const scrollTarget = await this.findElement(action.target, analysis)
+          if (action.ref !== undefined) {
+            const scrollTarget = await this.findElementByRef(action.ref)
             if (scrollTarget) {
               await scrollTarget.scrollIntoViewIfNeeded()
+              this.recordAction({ action: 'scroll', params: { ref: action.ref } })
+              return { success: true, result: `Scrolled to element [${action.ref}]` }
             }
+            return { success: false, result: `Element not found for scroll: ref=${action.ref}` }
           } else {
             const direction = action.direction === 'up' ? -1 : 1
             const amount = action.amount || 500
             await page.evaluate((y) => window.scrollBy(0, y), direction * amount)
+            this.recordAction({ action: 'scroll', params: { direction: action.direction, amount: action.amount } })
+            return { success: true, result: `Scrolled ${action.direction} by ${amount}px` }
           }
-          this.recordAction({ action: 'scroll', params: { direction: action.direction, amount: action.amount } })
-          return { success: true, result: `Scrolled ${action.direction}` }
 
         case 'wait':
           if (action.selector) {
@@ -248,6 +345,26 @@ export class BrowserAI {
             success: true,
             result: `Screenshot captured: ${screenshot.toString('base64').substring(0, 100)}...`
           }
+
+        case 'analyze':
+          // 返回页面摘要
+          const summary = await this.getPageSummary()
+          return {
+            success: true,
+            result: `Page analyzed. ${summary}`
+          }
+
+        case 'back':
+          await page.goBack()
+          return { success: true, result: 'Navigated back' }
+
+        case 'forward':
+          await page.goForward()
+          return { success: true, result: 'Navigated forward' }
+
+        case 'close':
+          await this.close()
+          return { success: true, result: 'Browser closed' }
 
         default:
           return { success: false, result: `Unknown action type: ${action.type}` }
@@ -441,239 +558,17 @@ export class BrowserAI {
   }
 
   /**
-   * 解析自然语言指令
+   * 根据坐标查找元素（备用方法）
    */
-  private parseInstruction(instruction: string, analysis: PageAnalysis): any {
-    const lowerInst = instruction.toLowerCase()
-
-    // 导航
-    if (lowerInst.startsWith('go to ') || lowerInst.startsWith('navigate to ') || lowerInst.startsWith('open ')) {
-      const url = instruction.replace(/^(go to|navigate to|open)\s+/i, '').trim()
-      return { type: 'navigate', url: url.startsWith('http') ? url : `https://${url}` }
-    }
-
-    // 点击
-    if (lowerInst.startsWith('click ') || lowerInst.startsWith('click on ') || lowerInst.startsWith('press ')) {
-      const target = instruction.replace(/^(click on|click|press)\s+/i, '').trim().replace(/["']/g, '')
-      return { type: 'click', target }
-    }
-
-    // 输入
-    const typeMatch = instruction.match(/type\s+["']?(.+?)["']?\s+in(?:to)?\s+["']?(.+?)["']?$/i)
-    if (typeMatch) {
-      return { type: 'type', text: typeMatch[1], field: typeMatch[2] }
-    }
-
-    // 搜索
-    if (lowerInst.startsWith('search for ') || lowerInst.startsWith('search ')) {
-      const keyword = instruction.replace(/^search\s+(for\s+)?/i, '').trim().replace(/["']/g, '')
-      return { type: 'search', keyword }
-    }
-
-    // 滚动
-    if (lowerInst.includes('scroll')) {
-      if (lowerInst.includes('up')) {
-        return { type: 'scroll', direction: 'up', amount: 500 }
-      } else if (lowerInst.includes('down')) {
-        return { type: 'scroll', direction: 'down', amount: 500 }
-      } else {
-        return { type: 'scroll', direction: 'down', amount: 500 }
-      }
-    }
-
-    // 等待
-    if (lowerInst.startsWith('wait')) {
-      const timeout = parseInt(lowerInst.match(/\d+/)?.[0] || '1000')
-      return { type: 'wait', timeout }
-    }
-
-    // 截图
-    if (lowerInst.includes('screenshot') || lowerInst.includes('take a photo')) {
-      return { type: 'screenshot', fullPage: lowerInst.includes('full') }
-    }
-
-    // 默认尝试作为点击处理
-    return { type: 'click', target: instruction }
-  }
-
-  /**
-   * 根据文本查找元素
-   */
-  private async findElement(text: string, analysis: PageAnalysis): Promise<Locator | null> {
+  private async findElementByCoordinates(x: number, y: number): Promise<Locator | null> {
     const page = this.page!
-    const lowerText = text.toLowerCase()
-
-    // 1. 先在分析结果中查找
-    const matchingElement = analysis.interactiveElements.find((e) =>
-      e.text?.toLowerCase().includes(lowerText) ||
-      e.name?.toLowerCase().includes(lowerText) ||
-      e.placeholder?.toLowerCase().includes(lowerText)
-    )
-
-    if (matchingElement) {
-      try {
-        return page.locator(matchingElement.selector).first()
-      } catch {
-        // 继续尝试其他方法
-      }
-    }
-
-    // 2. 尝试用 Playwright 的 getByText
+    // 使用坐标点击
     try {
-      const locator = page.getByText(text, { exact: false })
-      if (await locator.count() > 0) {
-        return locator.first()
-      }
-    } catch {
-      // 继续尝试
-    }
-
-    // 3. 尝试用 role 和 name
-    try {
-      const locator = page.getByRole('button', { name: text, exact: false })
-      if (await locator.count() > 0) {
-        return locator.first()
-      }
-    } catch {
-      // 继续尝试
-    }
-
-    // 4. 尝试用 label
-    try {
-      const locator = page.getByLabel(text, { exact: false })
-      if (await locator.count() > 0) {
-        return locator.first()
-      }
-    } catch {
-      // 未找到
-    }
-
-    return null
-  }
-
-  /**
-   * 查找输入字段
-   */
-  private async findInputField(fieldName: string, analysis: PageAnalysis): Promise<Locator | null> {
-    const page = this.page!
-    const lowerName = fieldName.toLowerCase()
-
-    // 1. 先在分析结果中查找
-    const matchingField = analysis.interactiveElements.find((e) =>
-      (e.tag === 'input' || e.tag === 'textarea') &&
-      (e.placeholder?.toLowerCase().includes(lowerName) ||
-       e.name?.toLowerCase().includes(lowerName))
-    )
-
-    if (matchingField) {
-      try {
-        return page.locator(matchingField.selector).first()
-      } catch {
-        // 继续尝试
-      }
-    }
-
-    // 2. 尝试用 placeholder
-    try {
-      const locator = page.locator(`input[placeholder*="${fieldName}" i], textarea[placeholder*="${fieldName}" i]`)
-      if (await locator.count() > 0) {
-        return locator.first()
-      }
-    } catch {
-      // 继续尝试
-    }
-
-    // 3. 尝试用 label
-    try {
-      const locator = page.getByLabel(fieldName, { exact: false })
-      if (await locator.count() > 0) {
-        return locator.first()
-      }
-    } catch {
-      // 继续尝试
-    }
-
-    // 4. 尝试用 role
-    try {
-      const locator = page.getByRole('textbox', { name: fieldName, exact: false })
-      if (await locator.count() > 0) {
-        return locator.first()
-      }
-    } catch {
-      // 未找到
-    }
-
-    return null
-  }
-
-  /**
-   * 查找搜索字段
-   */
-  private async findSearchField(analysis: PageAnalysis): Promise<Locator | null> {
-    const page = this.page!
-
-    // 1. 尝试用 type="search"
-    try {
-      const locator = page.locator('input[type="search"]').first()
-      if (await locator.count() > 0) {
-        return locator
-      }
-    } catch {}
-
-    // 2. 尝试用 placeholder 包含 search/query
-    try {
-      const locator = page.locator('input[placeholder*="search" i], input[placeholder*="query" i]').first()
-      if (await locator.count() > 0) {
-        return locator
-      }
-    } catch {}
-
-    // 3. 尝试用 name 包含 search/q
-    try {
-      const locator = page.locator('input[name*="search" i], input[name="q"], input[name="query"]').first()
-      if (await locator.count() > 0) {
-        return locator
-      }
-    } catch {}
-
-    // 4. 尝试用 aria-label
-    try {
-      const locator = page.locator('[aria-label*="search" i]').first()
-      if (await locator.count() > 0) {
-        return locator
-      }
-    } catch {}
-
-    // 5. 返回第一个文本输入框
-    try {
-      return page.locator('input[type="text"]').first()
+      await page.mouse.click(x, y)
+      return page.locator('body') // 返回 body 作为占位符
     } catch {
       return null
     }
-  }
-
-  /**
-   * 查找搜索按钮
-   */
-  private async findSearchButton(analysis: PageAnalysis): Promise<Locator | null> {
-    const page = this.page!
-
-    // 尝试找到搜索按钮
-    const searchButton = analysis.interactiveElements.find((e) =>
-      e.type === 'submit' ||
-      e.text?.toLowerCase().includes('search') ||
-      e.text?.toLowerCase().includes('搜索')
-    )
-
-    if (searchButton) {
-      try {
-        return page.locator(searchButton.selector).first()
-      } catch {
-        return null
-      }
-    }
-
-    return null
   }
 
   /**
@@ -820,6 +715,127 @@ export class BrowserAI {
     }
 
     return snapshotManager.toAIFormat(this.currentSnapshot)
+  }
+
+  /**
+   * 获取页面上下文（用于服务端 AI 解析）
+   * 返回页面 URL、标题和可交互元素列表
+   */
+  async getPageContext(): Promise<{
+    url: string
+    title: string
+    elements: Array<{
+      ref: number
+      tag: string
+      type?: string
+      name?: string
+      placeholder?: string
+      text?: string
+      role?: string
+      ariaLabel?: string
+    }>
+  }> {
+    await this.initialize()
+    const page = this.page!
+
+    const url = page.url()
+    const title = await page.title()
+
+    console.log(`[BrowserAI] getPageContext start - URL: ${url}, Title: ${title}`)
+
+    console.log(`[BrowserAI] Starting page.evaluate...`)
+
+    // 提取可交互元素
+    const result = await page.evaluate(() => {
+      const logs: string[] = []
+      logs.push(`[BrowserAI] page.evaluate started`)
+      logs.push(`[BrowserAI] document.URL: ${document.URL}`)
+      logs.push(`[BrowserAI] document.title: ${document.title}`)
+      logs.push(`[BrowserAI] document.body exists: ${!!document.body}`)
+      if (document.body) {
+        logs.push(`[BrowserAI] document.body.innerHTML length: ${document.body.innerHTML.length}`)
+        logs.push(`[BrowserAI] document.body children count: ${document.body.children.length}`)
+      }
+
+      const interactiveSelectors = [
+        'input[type="text"]',
+        'input[type="search"]',
+        'input[type="email"]',
+        'input[type="password"]',
+        'input[type="submit"]',
+        'input[type="button"]',
+        'button',
+        'a[href]',
+        'textarea',
+        'select',
+        '[role="button"]',
+        '[role="link"]',
+        '[role="textbox"]',
+        '[role="searchbox"]',
+        '[contenteditable="true"]'
+      ]
+
+      const results: Array<{
+        ref: number
+        tag: string
+        type?: string
+        name?: string
+        placeholder?: string
+        text?: string
+        role?: string
+        ariaLabel?: string
+      }> = []
+
+      let refCounter = 1
+
+      interactiveSelectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector)
+
+        if (elements.length > 0) {
+          logs.push(`[BrowserAI] Selector "${selector}" found ${elements.length} elements`)
+        }
+        elements.forEach(el => {
+          const rect = el.getBoundingClientRect()
+          const elId = el.id || '(no id)'
+          logs.push(`[BrowserAI] Element: ${el.tagName}#${elId}, visible=${rect.width > 0 && rect.height > 0}, size=${rect.width}x${rect.height}`)
+          // 只包含可见元素
+          if (rect.width === 0 || rect.height === 0) {
+            logs.push(`[BrowserAI]   -> skipped (not visible)`)
+            return
+          }
+
+          const text = el.textContent?.trim().substring(0, 100) ||
+                      (el as HTMLInputElement).value?.substring(0, 100) ||
+                      (el as HTMLInputElement).placeholder ||
+                      ''
+
+          const elementData = {
+            ref: refCounter++,
+            tag: el.tagName.toLowerCase(),
+            type: (el as HTMLInputElement).type,
+            name: (el as HTMLInputElement).name,
+            placeholder: (el as HTMLInputElement).placeholder,
+            text: text || undefined,
+            role: el.getAttribute('role') || undefined,
+            ariaLabel: el.getAttribute('aria-label') || undefined
+          }
+
+          logs.push(`[BrowserAI]   -> ADDED ref=${elementData.ref}, tag=${elementData.tag}, placeholder="${elementData.placeholder?.substring(0, 20)}"`)
+          results.push(elementData)
+        })
+      })
+
+      logs.push(`[BrowserAI] Total elements found: ${results.length}`)
+      return { elements: results, logs }
+    })
+
+    const elements = result.elements
+    // 打印从页面 evaluate 返回的日志
+    result.logs.forEach(log => console.log(log))
+
+    console.log(`[BrowserAI] Page context: ${elements.length} elements at ${url}`)
+
+    return { url, title, elements }
   }
 
   /**

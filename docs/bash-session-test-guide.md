@@ -50,7 +50,8 @@
 1. 在会话A中发送: `cd /tmp && export SESSION=A`
 2. 新建一个对话（会话B）
 3. 在会话B中发送: `cd /var && export SESSION=B`
-4. 回到会话A发送: `pwd && echo $SESSION`
+4. 回到会话A发送: 
+
 5. 在会话B发送: `pwd && echo $SESSION`
 
 **预期结果:**

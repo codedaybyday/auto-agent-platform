@@ -1,5 +1,11 @@
 import { Browser, BrowserContext, Page, chromium } from 'playwright'
-import { BrowserState } from '../agent/types'
+
+interface BrowserState {
+  page: unknown | null
+  browser: unknown | null
+  context: unknown | null
+  currentUrl: string | null
+}
 
 export class BrowserTool {
   name = 'browser'

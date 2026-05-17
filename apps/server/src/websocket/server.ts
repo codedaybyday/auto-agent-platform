@@ -256,9 +256,9 @@ export class WebSocketGateway {
         // session.list / switch / delete / rename / messages.get
         // 已改用 HTTP API，不再通过 WebSocket 处理
 
-        case 'session.list':
-          await this.handleSessionList(connection, message)
-          break
+        // case 'session.list':
+        //   await this.handleSessionList(connection, message)
+        //   break
 
         case 'agent.run':
           await this.handleAgentRun(connection, message)
@@ -332,16 +332,16 @@ export class WebSocketGateway {
   /**
    * 获取会话列表
    */
-  private async handleSessionList(connection: WSConnection, message: WSMessage): Promise<void> {
-    const sessions = this.sessionManager.getUserSessions(connection.userId)
+  // private async handleSessionList(connection: WSConnection, message: WSMessage): Promise<void> {
+  //   const sessions = this.sessionManager.getUserSessions(connection.userId)
 
-    this.sendToConnection(connection.id, {
-      type: 'state.sync' as MessageType,
-      messageId: this.generateId(),
-      timestamp: Date.now(),
-      payload: { sessions }
-    })
-  }
+  //   this.sendToConnection(connection.id, {
+  //     type: 'state.sync' as MessageType,
+  //     messageId: this.generateId(),
+  //     timestamp: Date.now(),
+  //     payload: { sessions }
+  //   })
+  // }
 
   /**
    * 运行 Agent

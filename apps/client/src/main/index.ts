@@ -233,25 +233,35 @@ async function executeToolAndReport(message: any): Promise<void> {
       case 'browser':
         result = await browserTool.execute(toolCall.arguments)
         break
+      case 'browser_get_context': {
+        // 返回页面上下文给服务端
+        console.log('[Main] Getting browser context')
+        const context = await browserAI.getPageContext()
+        result = context
+        break
+      }
+
+      case 'browser_ai_execute': {
+        // 服务端已解析的浏览器动作，直接执行
+        const { action } = toolCall.arguments as { action: any }
+        console.log('[Main] Executing browser_ai_execute:', action)
+        const actionResult = await browserAI.executeBrowserAction(action)
+        result = actionResult.result
+        break
+      }
+
       case 'browser_ai': {
-        // 使用增强版 BrowserAI
+        // 兼容旧版：如果服务端未解析，客户端降级处理
         const { instruction, ref } = toolCall.arguments
 
         if (ref) {
-          // 如果有 ref，执行点击或输入操作
           const actionResult = await browserAI.clickByRef(ref)
           result = actionResult.result
         } else if (instruction) {
-          // 执行语义化指令
-          const actionResult = await browserAI.semanticAct(instruction)
-
-          // 如果启用了 snapshot，在结果中附加页面摘要
-          if (browserAI.getCurrentSnapshot() && instruction.toLowerCase().includes('get page summary')) {
-            const summary = await browserAI.getPageSummary()
-            result = `${actionResult.result}\n\nPage Summary:\n${summary}`
-          } else {
-            result = actionResult.result
-          }
+          // 简单指令用硬编码规则解析（作为降级方案）
+          const action = parseBrowserInstruction(instruction)
+          const actionResult = await browserAI.executeBrowserAction(action)
+          result = actionResult.result
         } else {
           throw new Error('browser_ai tool requires either "instruction" or "ref" parameter')
         }
@@ -671,6 +681,52 @@ function setupAgentHandlers(): void {
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
+/**
+ * 简单指令解析（降级方案）
+ * 当服务端未解析时，客户端基于关键词匹配
+ */
+function parseBrowserInstruction(instruction: string): any {
+  const lower = instruction.toLowerCase()
+
+  // 导航
+  const navMatch = instruction.match(/(?:go to|open|visit|navigate to)\s+(https?:\/\/[^\s]+)/i)
+  if (navMatch) {
+    return { type: 'navigate', url: navMatch[1] }
+  }
+
+  // 点击
+  const clickMatch = instruction.match(/(?:click|press)\s+(?:on\s+)?(?:the\s+)?["']?([^"']+)["']?/i)
+  if (clickMatch) {
+    return { type: 'click', description: clickMatch[1] }
+  }
+
+  // 输入
+  const typeMatch = instruction.match(/(?:type|enter)\s+["']([^"']+)["']\s+(?:in|into)\s+["']?([^"']+)["']?/i)
+  if (typeMatch) {
+    return { type: 'type', text: typeMatch[1], field: typeMatch[2] }
+  }
+
+  // 滚动
+  const scrollMatch = instruction.match(/(?:scroll)\s+(up|down)/i)
+  if (scrollMatch) {
+    return { type: 'scroll', direction: scrollMatch[1].toLowerCase(), amount: 500 }
+  }
+
+  // 截图
+  if (lower.includes('screenshot')) {
+    return { type: 'screenshot' }
+  }
+
+  // 等待
+  const waitMatch = instruction.match(/(?:wait)\s+(\d+)/i)
+  if (waitMatch) {
+    return { type: 'wait', timeout: parseInt(waitMatch[1]) * 1000 }
+  }
+
+  // 默认分析
+  return { type: 'analyze' }
 }
 
 app.whenReady().then(async () => {

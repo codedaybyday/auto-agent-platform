@@ -16,7 +16,7 @@ import { config } from './config/index.js'
 import { authMiddleware, AuthRequest } from './middleware/auth.js'
 import { SessionManager } from './services/session-manager.js'
 import { WebSocketGateway } from './websocket/server.js'
-import { AgentLoop } from './services/agent-loop.js'
+// import { AgentLoop } from './services/agent-loop.js'
 
 // 生成实例 ID（用于多实例部署时区分）
 const INSTANCE_ID = `${process.env.HOSTNAME || 'local'}-${Date.now()}`

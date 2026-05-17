@@ -1,5 +1,10 @@
 import { spawn } from 'child_process'
-import { BashResult } from '../agent/types'
+
+export interface BashResult {
+  stdout: string
+  stderr: string
+  exitCode: number
+}
 
 export class BashTool {
   name = 'bash'
