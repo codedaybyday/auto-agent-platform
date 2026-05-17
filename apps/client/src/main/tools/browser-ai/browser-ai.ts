@@ -7,15 +7,18 @@
  * - 元素稳定引用（hash + stableHash）
  * - 安全层（SSRF 防护、URL 校验）
  * - 操作历史追踪和重试
+ * - 会话级别隔离（每个会话独立的 BrowserContext）
  */
 
-import { Browser, BrowserContext, Page, chromium, Locator } from 'playwright'
+import { Page, Locator } from 'playwright'
 import { BrowserSecurityGuard, defaultSecurityGuard, SecurityError } from './browser-security'
 import { DOMSerializer, SerializedDOM, domSerializer } from './dom-serializer'
 import { RobustLocator, robustLocator } from './robust-locator'
 import type { ElementSignature } from './element-hash'
 import type { BrowserUseElement } from './browser-use-dom'
 import { browserUseDOM } from './browser-use-dom'
+import { browserManager, SessionBrowserContext } from '../browser-manager.js'
+
 export interface PageElement {
   tag: string
   role?: string
@@ -67,26 +70,23 @@ export interface BrowserAIConfig {
   }
 }
 
-// Browser 工具定义已移到后端服务
-
-export class BrowserAI {
-  private browser: Browser | null = null
-  private context: BrowserContext | null = null
-  private page: Page | null = null
-  private actionHistory: BrowserAction[] = []
-  private currentDOM: SerializedDOM | null = null
-  private config: Required<BrowserAIConfig>
-  private securityGuard: BrowserSecurityGuard
-  private domSerializer: DOMSerializer
-  // Browser-use style: cached element map (index -> element)
-  private currentElementMap: Map<number, BrowserUseElement> = new Map()
-  // Last captured page context
-  private lastPageContext: {
+// 每个会话的操作历史存储
+interface SessionState {
+  actionHistory: BrowserAction[]
+  currentElementMap: Map<number, BrowserUseElement>
+  lastPageContext: {
     url: string
     title: string
     elements: BrowserUseElement[]
     timestamp: number
-  } | null = null
+  } | null
+}
+
+export class BrowserAI {
+  private sessionStates = new Map<string, SessionState>()
+  private config: Required<BrowserAIConfig>
+  private securityGuard: BrowserSecurityGuard
+  private domSerializer: DOMSerializer
 
   constructor(config: BrowserAIConfig = {}) {
     this.config = {
@@ -103,135 +103,97 @@ export class BrowserAI {
   }
 
   /**
-   * 初始化浏览器（无头+stealth 模式）
+   * 获取或创建会话状态
    */
-  async initialize(headless?: boolean): Promise<void> {
-    if (!this.browser) {
-      const useHeadless = headless ?? this.config.headless
-
-      this.browser = await chromium.launch({
-        headless: useHeadless,
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--disable-web-security',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-site-isolation-trials',
-          '--disable-dev-shm-usage',
-          '--window-size=1280,720',
-          '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.0.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        ]
-      })
-      this.context = await this.browser.newContext({
-        viewport: { width: 1280, height: 720 },
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.0.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        locale: 'zh-CN',
-        timezoneId: 'Asia/Shanghai'
-      })
-      this.page = await this.context.newPage()
-
-      // 注入 stealth 脚本
-      await this.page.addInitScript(() => {
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
-        // @ts-ignore
-        if (!window.chrome) window.chrome = {}
-        Object.defineProperty(navigator, 'plugins', {
-          get: () => [{ name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' }]
-        })
-      })
-
-      this.page.setDefaultTimeout(10000)
-      this.page.setDefaultNavigationTimeout(30000)
-      await this.setupSecurityInterceptors()
-
-      console.log('[BrowserAI] Browser initialized (stealth mode)')
+  private getSessionState(sessionId: string): SessionState {
+    let state = this.sessionStates.get(sessionId)
+    if (!state) {
+      state = {
+        actionHistory: [],
+        currentElementMap: new Map(),
+        lastPageContext: null
+      }
+      this.sessionStates.set(sessionId, state)
     }
+    return state
   }
 
   /**
-   * 设置安全拦截器
+   * 获取会话的 page（从 BrowserManager）
    */
-  private async setupSecurityInterceptors(): Promise<void> {
-    if (!this.page) return
-
-    // 监听导航事件
-    this.page.on('framenavigated', async (frame) => {
-      if (frame === this.page!.mainFrame()) {
-        try {
-          this.securityGuard.assertNavigationAllowed({
-            url: frame.url(),
-            timestamp: Date.now()
-          })
-        } catch (error) {
-          console.error('[BrowserAI] Security check failed:', error)
-          // 阻止继续导航
-          await this.page!.evaluate(() => window.stop())
-        }
-      }
-    })
+  private async getPage(sessionId: string): Promise<Page> {
+    return browserManager.getPage(sessionId)
   }
 
   /**
    * 执行浏览器动作
    * 由后端 LLM 解析指令后调用，接收结构化的动作参数
    *
+   * @param sessionId 会话ID
    * @param action 结构化动作对象
    * @returns 执行结果
    */
-  async executeBrowserAction(action: {
-    type: string
-    ref?: number
-    description?: {
-      tag?: string
-      role?: string
-      name?: string
+  async executeBrowserAction(
+    sessionId: string,
+    action: {
+      type: string
+      ref?: number
+      description?: {
+        tag?: string
+        role?: string
+        name?: string
+        text?: string
+        placeholder?: string
+        type?: string
+        id?: string
+        ariaLabel?: string
+        hash?: string
+        stableHash?: string
+        bbox?: { x: number; y: number; width: number; height: number }
+      }
       text?: string
-      placeholder?: string
-      type?: string
-      id?: string
-      ariaLabel?: string
-      hash?: string
-      stableHash?: string
-      bbox?: { x: number; y: number; width: number; height: number }
+      field?: {
+        tag?: string
+        role?: string
+        name?: string
+        text?: string
+        placeholder?: string
+        type?: string
+        id?: string
+        ariaLabel?: string
+        hash?: string
+        stableHash?: string
+        bbox?: { x: number; y: number; width: number; height: number }
+      }
+      url?: string
+      direction?: string
+      amount?: number
+      option?: string
+      timeout?: number
+      fullPage?: boolean
+      schema?: Record<string, any>
     }
-    text?: string
-    field?: {
-      tag?: string
-      role?: string
-      name?: string
-      text?: string
-      placeholder?: string
-      type?: string
-      id?: string
-      ariaLabel?: string
-      hash?: string
-      stableHash?: string
-      bbox?: { x: number; y: number; width: number; height: number }
-    }
-    url?: string
-    direction?: string
-    amount?: number
-    option?: string
-    timeout?: number
-    fullPage?: boolean
-    schema?: Record<string, any>
-  }): Promise<{ success: boolean; result: string }> {
-    await this.initialize()
+  ): Promise<{ success: boolean; result: string }> {
+    console.log(`[BrowserAI] Executing action: ${action.type} for session: ${sessionId}`)
 
-    console.log(`[BrowserAI] Executing action: ${action.type}`, action)
-
-    return this.executeAction(action, this.page!)
+    const page = await this.getPage(sessionId)
+    return this.executeAction(sessionId, action, page)
   }
 
   /**
    * 智能元素定位 - Browser-use style
    * 优先使用缓存的 element map，保持一致性
    */
-  private async locateElement(signature: Partial<ElementSignature> & { index?: number }): Promise<{ locator: Locator; strategy: string } | null> {
-    const page = this.page!
+  private async locateElement(
+    sessionId: string,
+    signature: Partial<ElementSignature> & { index?: number }
+  ): Promise<{ locator: Locator; strategy: string } | null> {
+    const page = await this.getPage(sessionId)
+    const sessionState = this.getSessionState(sessionId)
 
     // 优先使用缓存的 element map（与 getPageContext 一致）
-    if (signature.index !== undefined && this.currentElementMap.has(signature.index)) {
-      const element = this.currentElementMap.get(signature.index)!
+    if (signature.index !== undefined && sessionState.currentElementMap.has(signature.index)) {
+      const element = sessionState.currentElementMap.get(signature.index)!
       console.log(`[BrowserAI] Located element [${signature.index}] from cached map: ${element.tag}`)
 
       // 使用元素的 bounds 和属性来定位
@@ -340,9 +302,12 @@ export class BrowserAI {
    * 执行解析后的动作（基于 ref ID）
    */
   private async executeAction(
+    sessionId: string,
     action: any,
     page: Page
   ): Promise<{ success: boolean; result: string }> {
+    const sessionState = this.getSessionState(sessionId)
+
     try {
       switch (action.type) {
         case 'navigate':
@@ -363,10 +328,10 @@ export class BrowserAI {
           }
 
           await page.goto(action.url, { waitUntil: 'networkidle' })
-          this.recordAction({ action: 'navigate', params: { url: action.url }, success: true })
+          this.recordAction(sessionId, { action: 'navigate', params: { url: action.url }, success: true })
 
           // 导航后更新 CDP 上下文
-          await this.refreshPageContext()
+          await this.refreshPageContext(sessionId)
 
           return { success: true, result: `Navigated to ${page.url()}` }
 
@@ -386,14 +351,14 @@ export class BrowserAI {
             bounds: action.description?.bbox
           }
 
-          const clickResult = await this.locateElement(clickSignature)
+          const clickResult = await this.locateElement(sessionId, clickSignature)
           if (!clickResult) {
             return { success: false, result: `Element not found: ref=${action.ref}, desc=${JSON.stringify(action.description)}` }
           }
 
           await clickResult.locator.click()
           await page.waitForLoadState('networkidle')
-          this.recordAction({ action: 'click', params: { ref: action.ref, description: action.description, strategy: clickResult.strategy } })
+          this.recordAction(sessionId, { action: 'click', params: { ref: action.ref, description: action.description, strategy: clickResult.strategy } })
 
           return { success: true, result: `Clicked on element [${action.ref}] using ${clickResult.strategy}` }
         }
@@ -414,13 +379,13 @@ export class BrowserAI {
             bounds: action.field?.bbox
           }
 
-          const typeResult = await this.locateElement(typeSignature)
+          const typeResult = await this.locateElement(sessionId, typeSignature)
           if (!typeResult) {
             return { success: false, result: `Input field not found: ref=${action.ref}, field=${JSON.stringify(action.field)}` }
           }
 
           await typeResult.locator.fill(action.text)
-          this.recordAction({ action: 'type', params: { ref: action.ref, text: action.text, strategy: typeResult.strategy } })
+          this.recordAction(sessionId, { action: 'type', params: { ref: action.ref, text: action.text, strategy: typeResult.strategy } })
 
           return { success: true, result: `Typed "${action.text}" into element [${action.ref}] using ${typeResult.strategy}` }
         }
@@ -432,12 +397,12 @@ export class BrowserAI {
             role: 'combobox',
             name: action.description?.name
           }
-          const selectResult = await this.locateElement(selectSignature)
+          const selectResult = await this.locateElement(sessionId, selectSignature)
           if (!selectResult) {
             return { success: false, result: `Select field not found: ref=${action.ref}` }
           }
           await selectResult.locator.selectOption(action.option)
-          this.recordAction({ action: 'select', params: { ref: action.ref, option: action.option, strategy: selectResult.strategy } })
+          this.recordAction(sessionId, { action: 'select', params: { ref: action.ref, option: action.option, strategy: selectResult.strategy } })
           return { success: true, result: `Selected "${action.option}" in element [${action.ref}] using ${selectResult.strategy}` }
         }
 
@@ -449,10 +414,10 @@ export class BrowserAI {
               role: action.description?.role,
               name: action.description?.name
             }
-            const scrollResult = await this.locateElement(scrollSignature)
+            const scrollResult = await this.locateElement(sessionId, scrollSignature)
             if (scrollResult) {
               await scrollResult.locator.scrollIntoViewIfNeeded()
-              this.recordAction({ action: 'scroll', params: { ref: action.ref, strategy: scrollResult.strategy } })
+              this.recordAction(sessionId, { action: 'scroll', params: { ref: action.ref, strategy: scrollResult.strategy } })
               return { success: true, result: `Scrolled to element [${action.ref}] using ${scrollResult.strategy}` }
             }
             return { success: false, result: `Element not found for scroll: ref=${action.ref}` }
@@ -460,7 +425,7 @@ export class BrowserAI {
             const direction = action.direction === 'up' ? -1 : 1
             const amount = action.amount || 500
             await page.evaluate((y) => window.scrollBy(0, y), direction * amount)
-            this.recordAction({ action: 'scroll', params: { direction: action.direction, amount: action.amount } })
+            this.recordAction(sessionId, { action: 'scroll', params: { direction: action.direction, amount: action.amount } })
             return { success: true, result: `Scrolled ${action.direction} by ${amount}px` }
           }
         }
@@ -485,7 +450,7 @@ export class BrowserAI {
 
         case 'analyze':
           // 返回页面摘要
-          const summary = await this.getPageSummary()
+          const summary = await this.getPageSummary(sessionId)
           return {
             success: true,
             result: `Page analyzed. ${summary}`
@@ -500,8 +465,8 @@ export class BrowserAI {
           return { success: true, result: 'Navigated forward' }
 
         case 'close':
-          await this.close()
-          return { success: true, result: 'Browser closed' }
+          await this.close(sessionId)
+          return { success: true, result: 'Browser closed for this session' }
 
         default:
           return { success: false, result: `Unknown action type: ${action.type}` }
@@ -516,222 +481,15 @@ export class BrowserAI {
   }
 
   /**
-   * 智能页面分析 - 提取 LLM 友好的页面结构
-   */
-  async analyzePage(): Promise<PageAnalysis> {
-    await this.initialize()
-    const page = this.page!
-
-    const analysis = await page.evaluate(() => {
-      const result: PageAnalysis = {
-        url: window.location.href,
-        title: document.title,
-        description: document.querySelector('meta[name="description"]')?.getAttribute('content') || undefined,
-        interactiveElements: [],
-        forms: [],
-        links: [],
-        headings: [],
-        textContent: ''
-      }
-
-      // 提取标题
-      document.querySelectorAll('h1, h2, h3').forEach((el) => {
-        result.headings.push({
-          level: parseInt(el.tagName[1]),
-          text: el.textContent?.trim() || ''
-        })
-      })
-
-      // 提取可交互元素
-      const interactiveSelectors = [
-        'button',
-        'a[href]',
-        'input[type="text"]',
-        'input[type="search"]',
-        'input[type="email"]',
-        'input[type="password"]',
-        'input[type="submit"]',
-        'textarea',
-        'select',
-        '[role="button"]',
-        '[role="link"]',
-        '[onclick]'
-      ]
-
-      const seenElements = new Set<Element>()
-
-      interactiveSelectors.forEach((selector) => {
-        document.querySelectorAll(selector).forEach((el) => {
-          if (seenElements.has(el)) return
-          seenElements.add(el)
-
-          const rect = el.getBoundingClientRect()
-          if (rect.width === 0 || rect.height === 0) return // 不可见元素
-
-          const element: PageElement = {
-            tag: el.tagName.toLowerCase(),
-            selector: '', // 稍后生成
-            role: el.getAttribute('role') || undefined,
-            name: el.getAttribute('name') || undefined,
-            text: el.textContent?.trim().substring(0, 100),
-            placeholder: el.getAttribute('placeholder') || undefined,
-            type: (el as HTMLInputElement).type || undefined,
-            href: (el as HTMLAnchorElement).href || undefined,
-            boundingBox: {
-              x: rect.x,
-              y: rect.y,
-              width: rect.width,
-              height: rect.height
-            }
-          }
-
-          // 生成选择器
-          if (el.id) {
-            element.selector = `#${el.id}`
-          } else if (el.className && typeof el.className === 'string') {
-            element.selector = `.${el.className.split(' ')[0]}`
-          } else {
-            element.selector = el.tagName.toLowerCase()
-          }
-
-          result.interactiveElements.push(element)
-
-          // 分类
-          if (el.tagName === 'A' && (el as HTMLAnchorElement).href) {
-            result.links.push(element)
-          }
-        })
-      })
-
-      // 提取表单
-      document.querySelectorAll('form').forEach((form, index) => {
-        const fields: PageElement[] = []
-        let submitButton: PageElement | undefined
-
-        form.querySelectorAll('input, textarea, select').forEach((field) => {
-          const fieldInfo: PageElement = {
-            tag: field.tagName.toLowerCase(),
-            selector: `${form.tagName.toLowerCase()}:nth-of-type(${index + 1}) ${field.tagName.toLowerCase()}`,
-            name: field.getAttribute('name') || undefined,
-            placeholder: field.getAttribute('placeholder') || undefined,
-            type: (field as HTMLInputElement).type || undefined
-          }
-          fields.push(fieldInfo)
-
-          if ((field as HTMLInputElement).type === 'submit') {
-            submitButton = fieldInfo
-          }
-        })
-
-        result.forms.push({
-          selector: `form:nth-of-type(${index + 1})`,
-          fields,
-          submitButton
-        })
-      })
-
-      // 提取主要内容文本
-      const mainContent = document.querySelector('main, article, [role="main"], .content, #content')
-      if (mainContent) {
-        result.textContent = mainContent.textContent?.trim().substring(0, 3000) || ''
-      } else {
-        result.textContent = document.body.textContent?.trim().substring(0, 2000) || ''
-      }
-
-      return result
-    })
-
-    return analysis
-  }
-
-  /**
-   * 提取结构化数据 - 根据给定的模式提取页面数据
-   */
-  async extractData<T = any>(schema: {
-    [key: string]: {
-      selector: string
-      attribute?: string
-      multiple?: boolean
-    }
-  }): Promise<{ success: boolean; data?: T; error?: string }> {
-    await this.initialize()
-    const page = this.page!
-
-    try {
-      const result = await page.evaluate((extractSchema) => {
-        const data: any = {}
-
-        for (const [key, config] of Object.entries(extractSchema)) {
-          if (config.multiple) {
-            const elements = Array.from(document.querySelectorAll(config.selector))
-            data[key] = elements.map((el) => {
-              if (config.attribute) {
-                return el.getAttribute(config.attribute)
-              }
-              return el.textContent?.trim()
-            })
-          } else {
-            const el = document.querySelector(config.selector)
-            if (el) {
-              if (config.attribute) {
-                data[key] = el.getAttribute(config.attribute)
-              } else {
-                data[key] = el.textContent?.trim()
-              }
-            }
-          }
-        }
-
-        return data
-      }, schema)
-
-      return { success: true, data: result as T }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      }
-    }
-  }
-
-  /**
-   * 根据坐标查找元素（备用方法）
-   */
-  private async findElementByCoordinates(x: number, y: number): Promise<Locator | null> {
-    const page = this.page!
-    // 使用坐标点击
-    try {
-      await page.mouse.click(x, y)
-      return page.locator('body') // 返回 body 作为占位符
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * 记录操作历史
-   */
-  private recordAction(action: BrowserAction): void {
-    this.actionHistory.push({
-      ...action,
-      timestamp: Date.now()
-    })
-    // 只保留最近 50 条
-    if (this.actionHistory.length > 50) {
-      this.actionHistory.shift()
-    }
-  }
-
-  /**
    * 刷新页面上下文（使用 CDP）
    */
-  async refreshPageContext(): Promise<{
+  async refreshPageContext(sessionId: string): Promise<{
     url: string
     title: string
     elements: BrowserUseElement[]
   }> {
-    await this.initialize()
-    const page = this.page!
+    const page = await this.getPage(sessionId)
+    const sessionState = this.getSessionState(sessionId)
 
     const url = page.url()
     const title = await page.title()
@@ -740,20 +498,20 @@ export class BrowserAI {
     const elements = await browserUseDOM.getInteractiveElements(page)
 
     // 更新缓存
-    this.currentElementMap.clear()
+    sessionState.currentElementMap.clear()
     elements.forEach(el => {
-      this.currentElementMap.set(el.index, el)
+      sessionState.currentElementMap.set(el.index, el)
     })
 
     // 保存上下文
-    this.lastPageContext = {
+    sessionState.lastPageContext = {
       url,
       title,
       elements,
       timestamp: Date.now()
     }
 
-    this.recordAction({
+    this.recordAction(sessionId, {
       action: 'context',
       params: { url, elementCount: elements.length },
       success: true
@@ -765,16 +523,16 @@ export class BrowserAI {
   /**
    * 通过索引执行点击（基于 CDP）
    */
-  async clickByIndex(index: number): Promise<{ success: boolean; result: string }> {
-    await this.initialize()
-    const page = this.page!
+  async clickByIndex(sessionId: string, index: number): Promise<{ success: boolean; result: string }> {
+    const page = await this.getPage(sessionId)
+    const sessionState = this.getSessionState(sessionId)
 
     // 如果缓存中没有，刷新上下文
-    if (!this.currentElementMap.has(index)) {
-      await this.refreshPageContext()
+    if (!sessionState.currentElementMap.has(index)) {
+      await this.refreshPageContext(sessionId)
     }
 
-    const element = this.currentElementMap.get(index)
+    const element = sessionState.currentElementMap.get(index)
     if (!element) {
       return { success: false, result: `Element with index [${index}] not found` }
     }
@@ -788,7 +546,7 @@ export class BrowserAI {
       await locator.click()
       await page.waitForLoadState('networkidle')
 
-      this.recordAction({
+      this.recordAction(sessionId, {
         action: 'click',
         params: { index },
         success: true
@@ -806,16 +564,16 @@ export class BrowserAI {
   /**
    * 通过索引输入文本（基于 CDP）
    */
-  async typeByIndex(index: number, text: string): Promise<{ success: boolean; result: string }> {
-    await this.initialize()
-    const page = this.page!
+  async typeByIndex(sessionId: string, index: number, text: string): Promise<{ success: boolean; result: string }> {
+    const page = await this.getPage(sessionId)
+    const sessionState = this.getSessionState(sessionId)
 
     // 如果缓存中没有，刷新上下文
-    if (!this.currentElementMap.has(index)) {
-      await this.refreshPageContext()
+    if (!sessionState.currentElementMap.has(index)) {
+      await this.refreshPageContext(sessionId)
     }
 
-    const element = this.currentElementMap.get(index)
+    const element = sessionState.currentElementMap.get(index)
     if (!element) {
       return { success: false, result: `Element with index [${index}] not found` }
     }
@@ -828,7 +586,7 @@ export class BrowserAI {
     try {
       await locator.fill(text)
 
-      this.recordAction({
+      this.recordAction(sessionId, {
         action: 'type',
         params: { index, text },
         success: true
@@ -846,17 +604,19 @@ export class BrowserAI {
   /**
    * 获取页面 LLM 友好摘要（基于 CDP）
    */
-  async getPageSummary(): Promise<string> {
+  async getPageSummary(sessionId: string): Promise<string> {
+    const sessionState = this.getSessionState(sessionId)
+
     // 如果没有当前上下文，先获取一个
-    if (!this.lastPageContext) {
-      await this.refreshPageContext()
+    if (!sessionState.lastPageContext) {
+      await this.refreshPageContext(sessionId)
     }
 
-    if (!this.lastPageContext) {
+    if (!sessionState.lastPageContext) {
       return 'Failed to capture page context'
     }
 
-    const { url, title, elements } = this.lastPageContext
+    const { url, title, elements } = sessionState.lastPageContext
     const lines: string[] = []
 
     lines.push(`Page: ${title}`)
@@ -896,7 +656,7 @@ export class BrowserAI {
    * 获取页面上下文（用于服务端 AI 解析）
    * 使用 CDP 获取元素，确保与 executeAction 一致
    */
-  async getPageContext(): Promise<{
+  async getPageContext(sessionId: string): Promise<{
     url: string
     title: string
     elements: Array<{
@@ -913,9 +673,8 @@ export class BrowserAI {
       stableHash?: string
     }>
   }> {
-    await this.initialize()
-
-    const context = await this.refreshPageContext()
+    const context = await this.refreshPageContext(sessionId)
+    const sessionState = this.getSessionState(sessionId)
 
     const elements = context.elements.map(el => ({
       ref: el.index,
@@ -946,49 +705,76 @@ export class BrowserAI {
   }
 
   /**
+   * 记录操作历史
+   */
+  private recordAction(sessionId: string, action: BrowserAction): void {
+    const sessionState = this.getSessionState(sessionId)
+    sessionState.actionHistory.push({
+      ...action,
+      timestamp: Date.now()
+    })
+    // 只保留最近 50 条
+    if (sessionState.actionHistory.length > 50) {
+      sessionState.actionHistory.shift()
+    }
+  }
+
+  /**
    * 获取操作历史
    */
-  getActionHistory(): BrowserAction[] {
-    return [...this.actionHistory]
+  getActionHistory(sessionId: string): BrowserAction[] {
+    const sessionState = this.getSessionState(sessionId)
+    return [...sessionState.actionHistory]
   }
 
   /**
    * 获取当前 URL
    */
-  getCurrentUrl(): string | null {
-    return this.page?.url() || null
+  async getCurrentUrl(sessionId: string): Promise<string | null> {
+    try {
+      const page = await this.getPage(sessionId)
+      return page.url()
+    } catch {
+      return null
+    }
   }
 
   /**
    * 返回上一页
    */
-  async back(): Promise<void> {
-    await this.page?.goBack()
+  async back(sessionId: string): Promise<void> {
+    const page = await this.getPage(sessionId)
+    await page.goBack()
   }
 
   /**
    * 前进到下一页
    */
-  async forward(): Promise<void> {
-    await this.page?.goForward()
+  async forward(sessionId: string): Promise<void> {
+    const page = await this.getPage(sessionId)
+    await page.goForward()
   }
 
   /**
-   * 关闭浏览器
+   * 关闭指定会话的浏览器上下文
    */
-  async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close()
-      this.browser = null
-      this.context = null
-      this.page = null
-      this.actionHistory = []
-      this.currentElementMap.clear()
-      this.lastPageContext = null
-      console.log('[BrowserAI] Browser closed')
-    }
+  async close(sessionId: string): Promise<void> {
+    // 清理会话状态
+    this.sessionStates.delete(sessionId)
+    // 通过 BrowserManager 关闭 context（保留 browser 实例）
+    await browserManager.closeSession(sessionId)
+    console.log(`[BrowserAI] Session ${sessionId} closed`)
+  }
+
+  /**
+   * 关闭所有会话
+   */
+  async closeAll(): Promise<void> {
+    this.sessionStates.clear()
+    await browserManager.closeAllSessions()
+    console.log('[BrowserAI] All sessions closed')
   }
 }
 
-// 导出单例
+// 导出单例（不再是单例 browser，而是管理多个 session 的 manager）
 export const browserAI = new BrowserAI()

@@ -29,9 +29,9 @@ function initSSOClient() {
   ssoClient = new SSOCliClient({
     clientId: '3e64c59645', // 测试环境
     accessEnv,
-    localPortList: [3003, 5174], // 自定义
+    localPortList: [5173], // 自定义
     isDebug: process.env.NODE_ENV === 'development',
-    tokenStorage: ssoTokenStorage,
+    // tokenStorage: ssoTokenStorage,
   });
 }
 
@@ -221,12 +221,30 @@ async function handleServerMessage(message: any) {
 
 async function executeToolAndReport(message: any): Promise<void> {
   const { toolCall } = message.payload
-  console.log('[Main] Executing tool:', toolCall.name)
+  const sessionId = message.sessionId
+
+  // 验证 sessionId 有效性
+  if (!sessionId) {
+    console.error('[Main] Error: sessionId is missing in tool.execute message')
+    ws?.send(JSON.stringify({
+      type: 'tool.error',
+      messageId: toolCall.id,
+      timestamp: Date.now(),
+      sessionId: sessionId || 'unknown',
+      payload: {
+        toolCallId: toolCall.id,
+        success: false,
+        error: 'sessionId is missing'
+      }
+    }))
+    return
+  }
+
+  console.log(`[Main] Executing tool: ${toolCall.name} for session: ${sessionId}`)
 
   try {
     // 动态导入工具
     const { createBashTool } = await import('./tools/bash/index.js')
-    const { browserTool } = await import('./tools/browser.js')
     const { browserAI } = await import('./tools/browser-ai/index.js')
 
     let result: any
@@ -235,7 +253,7 @@ async function executeToolAndReport(message: any): Promise<void> {
       case 'bash': {
         // 使用新的 BashTool，传入当前会话 ID 以支持持久化 session
         const bashTool = createBashTool(
-          currentSessionId || `temp_${Date.now()}`,
+          sessionId || `temp_${Date.now()}`,
           // 确认回调 - 危险命令时显示确认对话框
           async (command, riskLevel) => {
             // TODO: 显示确认对话框
@@ -247,13 +265,10 @@ async function executeToolAndReport(message: any): Promise<void> {
         result = await bashTool.execute(toolCall.arguments)
         break
       }
-      case 'browser':
-        result = await browserTool.execute(toolCall.arguments)
-        break
       case 'browser_get_context': {
         // 返回页面上下文给服务端
-        console.log('[Main] Getting browser context')
-        const context = await browserAI.getPageContext()
+        console.log(`[Main] Getting browser context for session: ${sessionId}`)
+        const context = await browserAI.getPageContext(sessionId)
         result = context
         break
       }
@@ -261,8 +276,8 @@ async function executeToolAndReport(message: any): Promise<void> {
       case 'browser_ai_execute': {
         // 服务端已解析的浏览器动作，直接执行
         const { action } = toolCall.arguments as { action: any }
-        console.log('[Main] Executing browser_ai_execute:', action)
-        const actionResult = await browserAI.executeBrowserAction(action)
+        console.log(`[Main] Executing browser_ai_execute for session ${sessionId}:`, action)
+        const actionResult = await browserAI.executeBrowserAction(sessionId, action)
         result = actionResult.result
         break
       }
@@ -271,13 +286,13 @@ async function executeToolAndReport(message: any): Promise<void> {
         // 兼容旧版：如果服务端未解析，客户端降级处理
         const { instruction, ref } = toolCall.arguments
 
-        if (ref) {
-          const actionResult = await browserAI.clickByRef(ref)
+        if (ref !== undefined) {
+          const actionResult = await browserAI.clickByIndex(sessionId, ref)
           result = actionResult.result
         } else if (instruction) {
           // 简单指令用硬编码规则解析（作为降级方案）
           const action = parseBrowserInstruction(instruction)
-          const actionResult = await browserAI.executeBrowserAction(action)
+          const actionResult = await browserAI.executeBrowserAction(sessionId, action)
           result = actionResult.result
         } else {
           throw new Error('browser_ai tool requires either "instruction" or "ref" parameter')
@@ -294,7 +309,7 @@ async function executeToolAndReport(message: any): Promise<void> {
       type: 'tool.result',
       messageId: toolCall.id,
       timestamp: Date.now(),
-      sessionId: currentSessionId,
+      sessionId: sessionId,
       payload: {
         toolCallId: toolCall.id,
         success: true,
@@ -309,7 +324,7 @@ async function executeToolAndReport(message: any): Promise<void> {
       type: 'tool.error',
       messageId: toolCall.id,
       timestamp: Date.now(),
-      sessionId: currentSessionId,
+      sessionId: sessionId,
       payload: {
         toolCallId: toolCall.id,
         success: false,
@@ -337,15 +352,10 @@ async function cleanupSessionTools(sessionId: string | undefined): Promise<void>
     sessionManager.destroy(targetSessionId)
     console.log(`[Main] Bash session ${targetSessionId} destroyed`)
 
-    // 清理浏览器（如果有）
-    const { browserTool } = await import('./tools/browser.js')
-    await browserTool.close()
-    console.log(`[Main] Browser (legacy) closed for session ${targetSessionId}`)
-
-    // 清理 BrowserAI
+    // 清理会话的浏览器上下文（使用 BrowserManager 实现会话隔离）
     const { browserAI } = await import('./tools/browser-ai/index.js')
-    await browserAI.close()
-    console.log(`[Main] BrowserAI closed for session ${targetSessionId}`)
+    await browserAI.close(targetSessionId)
+    console.log(`[Main] BrowserAI context closed for session ${targetSessionId}`)
 
     // 清理进程注册表
     const { processRegistry } = await import('./tools/bash/process-registry.js')
@@ -626,6 +636,16 @@ function setupAgentHandlers(): void {
       // 从本地缓存删除
       sessions.delete(sessionId)
 
+      // 清理该会话的浏览器上下文
+      try {
+        const { browserAI } = await import('./tools/browser-ai/index.js')
+        await browserAI.close(sessionId)
+        console.log(`[Main] Browser context cleaned up for deleted session: ${sessionId}`)
+      } catch (browserError) {
+        // 浏览器清理失败不影响会话删除结果
+        console.warn(`[Main] Failed to cleanup browser for session ${sessionId}:`, browserError)
+      }
+
       // 如果删除的是当前会话，清空当前会话
       if (currentSessionId === sessionId) {
         currentSessionId = null
@@ -718,7 +738,7 @@ function bindIpcEvents() {
       } else {
         return { success: false, data: null, error: result?.msg || '获取用户信息失败' };
       }
-      } catch (error) {
+      } catch (error: any) {
         console.error('SSO whoami error:', error);
         return { success: false, data: null, error: error.message };
       }
@@ -734,7 +754,7 @@ function bindIpcEvents() {
       } else {
         return { success: false, error: '登录失败' };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('SSO login error:', error);
       return { success: false, error: error?.msg || error?.message };
     }
@@ -753,7 +773,7 @@ function bindIpcEvents() {
       }
 
       return { success: true, error: null };
-    } catch (error) {
+    } catch (error: any) {
       console.error('SSO logout error:', error);
       return { success: false, error: error.message };
     }
@@ -851,5 +871,14 @@ app.on('before-quit', async () => {
     console.log('[Main] All shell sessions cleaned up')
   } catch (error) {
     console.error('[Main] Failed to cleanup shell sessions:', error)
+  }
+
+  // 清理所有浏览器会话
+  try {
+    const { browserAI } = await import('./tools/browser-ai/index.js')
+    await browserAI.closeAll()
+    console.log('[Main] All browser sessions cleaned up')
+  } catch (error) {
+    console.error('[Main] Failed to cleanup browser sessions:', error)
   }
 })
