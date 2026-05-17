@@ -52,6 +52,7 @@ export interface AgentAPI {
   onSessionsUpdated: (callback: (sessions: Session[]) => void) => () => void
   /** 监听会话切换 */
   onSessionSwitched: (callback: (sessionId: string) => void) => () => void
+  login: () => Promise<{ success: boolean; error?: string }>
 }
 
 /**
@@ -124,7 +125,9 @@ const agentAPI: AgentAPI = {
     const handler = (_event: Electron.IpcRendererEvent, sessionId: string) => callback(sessionId)
     ipcRenderer.on('agent:session_switched', handler)
     return () => ipcRenderer.removeListener('agent:session_switched', handler)
-  }
+  },
+  // sso
+  login: () => ipcRenderer.invoke('sso:login')
 }
 
 const api = {

@@ -17,6 +17,7 @@ export interface AgentAPI {
   onToolResult: (callback: (data: { toolCall: ToolCall; result: ToolResult }) => void) => () => void
   onToolResults: (callback: (message: Message) => void) => () => void
   onHistoryCleared: (callback: () => void) => () => void
+  login: () => Promise<{ success: boolean; error?: string }>
 }
 
 interface CustomAPI {
