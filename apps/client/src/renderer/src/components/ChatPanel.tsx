@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import './ChatInterface.css'
+import './ChatPanel.css'
 
 interface ToolCall {
   id: string
@@ -24,7 +24,7 @@ interface Message {
   tool_results?: ToolResult[]
 }
 
-interface ChatInterfaceProps {
+interface ChatPanelProps {
   messages: Message[]
   isProcessing: boolean
   onSendMessage: (content: string) => void
@@ -110,12 +110,12 @@ function MessageBubble({ message, isLoading }: { message: Message; isLoading?: b
   )
 }
 
-export function ChatInterface({
+export function ChatPanel({
   messages,
   isProcessing,
   onSendMessage,
   onClearHistory
-}: ChatInterfaceProps): JSX.Element {
+}: ChatPanelProps): JSX.Element {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)

@@ -14,7 +14,6 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm",
-    "dev": "tsup src/index.ts --dts --format esm --watch",
     "type-check": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { ChatInterface } from './components/ChatInterface'
+import { ChatPanel } from './components/ChatPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SessionPanel } from './components/SessionPanel'
 import type { Session } from './components/SessionPanel'
@@ -361,7 +361,7 @@ function App(): JSX.Element {
         )}
 
         {activeTab === 'chat' ? (
-          <ChatInterface
+          <ChatPanel
             messages={messages}
             isProcessing={isProcessing}
             onSendMessage={handleSendMessage}

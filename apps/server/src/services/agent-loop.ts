@@ -54,8 +54,8 @@ export class AgentLoop extends EventEmitter {
       model: config.model || 'gpt-4',
       systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
     }
-    this.toolBridge = new ToolBridge(sessionId, userId)
     this.llmClient = new LLMClient({ model: this.config.model, baseURL: config.baseURL})
+    this.toolBridge = new ToolBridge(sessionId, userId, this.llmClient)
   }
 
   /**
@@ -106,6 +106,7 @@ export class AgentLoop extends EventEmitter {
         // Step 1: Observation（构建上下文）
         const context = this.buildContext()
         console.log(`[AgentLoop] 迭代 ${this.state.iteration} - 构建上下文: ${context.length} 条消息`)
+        console.log(`[AgentLoop] 上下文:`, JSON.stringify(context, null, 2))
 
         // Step 2: Thought（LLM 思考）
         console.log(`[AgentLoop] 调用 LLM...`)
