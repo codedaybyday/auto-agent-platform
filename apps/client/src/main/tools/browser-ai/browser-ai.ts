@@ -103,26 +103,47 @@ export class BrowserAI {
   }
 
   /**
-   * 初始化浏览器
+   * 初始化浏览器（无头+stealth 模式）
    */
   async initialize(headless?: boolean): Promise<void> {
     if (!this.browser) {
       const useHeadless = headless ?? this.config.headless
-      this.browser = await chromium.launch({ headless: useHeadless })
+
+      this.browser = await chromium.launch({
+        headless: useHeadless,
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--disable-web-security',
+          '--disable-features=IsolateOrigins,site-per-process',
+          '--disable-site-isolation-trials',
+          '--disable-dev-shm-usage',
+          '--window-size=1280,720',
+          '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.0.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ]
+      })
       this.context = await this.browser.newContext({
         viewport: { width: 1280, height: 720 },
-        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.0.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        locale: 'zh-CN',
+        timezoneId: 'Asia/Shanghai'
       })
       this.page = await this.context.newPage()
 
-      // 设置默认超时
+      // 注入 stealth 脚本
+      await this.page.addInitScript(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
+        // @ts-ignore
+        if (!window.chrome) window.chrome = {}
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => [{ name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer' }]
+        })
+      })
+
       this.page.setDefaultTimeout(10000)
       this.page.setDefaultNavigationTimeout(30000)
-
-      // 设置请求拦截（安全检查）
       await this.setupSecurityInterceptors()
 
-      console.log('[BrowserAI] Browser initialized')
+      console.log('[BrowserAI] Browser initialized (stealth mode)')
     }
   }
 
