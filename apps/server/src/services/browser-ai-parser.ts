@@ -16,6 +16,9 @@ export interface PageElement {
   text?: string
   role?: string
   ariaLabel?: string
+  hash?: string
+  stableHash?: string
+  id?: string
 }
 
 export interface PageContext {
@@ -24,13 +27,28 @@ export interface PageContext {
   elements: PageElement[]
 }
 
+export interface ElementSemanticDescription {
+  tag?: string
+  role?: string
+  name?: string
+  text?: string
+  placeholder?: string
+  type?: string
+  id?: string
+  className?: string
+  ariaLabel?: string
+  hash?: string
+  stableHash?: string
+  bbox?: { x: number; y: number; width: number; height: number }
+}
+
 export interface ParsedBrowserAction {
   type: 'navigate' | 'click' | 'type' | 'select' | 'hover' | 'scroll' | 'wait' | 'screenshot' | 'analyze' | 'back' | 'forward' | 'close'
   url?: string
   ref?: number
-  description?: string
+  description?: ElementSemanticDescription  // 语义描述，用于回退定位
   text?: string
-  field?: string
+  field?: ElementSemanticDescription  // 输入框的语义描述
   direction?: 'up' | 'down'
   amount?: number
   option?: string
@@ -138,12 +156,12 @@ export class BrowserAIParser {
 - URL: ${context.url}
 - 标题: ${context.title}
 
-页面元素列表（格式: ref | tag | attributes | text）：
+页面元素列表（格式: ref | tag | role | type | placeholder | name | text）：
 ${domDescription}
 
 可用动作类型：
-- click: 点击元素（需要提供 ref）
-- type: 在输入框输入文本（需要提供 ref 和 text）
+- click: 点击元素（需要提供 ref 和 description）
+- type: 在输入框输入文本（需要提供 ref、field 和 text）
 - scroll: 滚动页面
 - screenshot: 截图
 - wait: 等待
@@ -152,14 +170,54 @@ ${domDescription}
 
 重要规则：
 1. 必须根据用户指令选择最合适的元素 ref
-2. 如果找不到匹配的元素，返回 type: "analyze"
-3. 输入框通常是 input 或 textarea 标签
-4. 按钮通常是 button 或包含特定文本的元素
+2. 必须同时返回完整的语义描述（description 或 field），包含所有可用字段用于回退定位
+3. 必须包含 hash 和 stableHash（如果页面上有提供），用于元素变化后重新定位
+4. 如果找不到匹配的元素，返回 type: "analyze"
+5. 输入框通常是 input 或 textarea 标签，role 可能是 textbox/searchbox
+6. 按钮通常是 button 或包含特定文本的元素
 
 输出格式（严格 JSON）：
 {
-  "type": "动作类型",
-  "ref": 元素编号,
+  "type": "click",
+  "ref": 0,
+  "description": {
+    "tag": "button",
+    "role": "button",
+    "name": "百度一下",
+    "text": "百度一下",
+    "hash": "a1b2c3d4",
+    "stableHash": "e5f6g7h8"
+  }
+}
+
+{
+  "type": "type",
+  "ref": 1,
+  "field": {
+    "tag": "input",
+    "role": "textbox",
+    "placeholder": "搜索关键词",
+    "type": "text",
+    "hash": "a1b2c3d4",
+    "stableHash": "e5f6g7h8"
+  },
+  "text": "要输入的内容"
+}
+
+现在请解析用户指令:
+  "description": {              // click 操作时的目标元素描述
+    "tag": "元素标签",
+    "role": "ARIA role",
+    "name": "aria-label 或 name",
+    "text": "可见文本",
+    "placeholder": "占位符"
+  },
+  "field": {                    // type 操作时的输入框描述
+    "tag": "input",
+    "role": "textbox",
+    "placeholder": "占位符",
+    "type": "input类型"
+  },
   "text": "输入的文本（type时需要）",
   "direction": "up/down（scroll时需要）",
   "amount": 数值
@@ -182,13 +240,33 @@ ${domDescription}
 
       const action: ParsedBrowserAction = JSON.parse(jsonStr)
 
-      // 验证 ref 是否有效
+      // 验证 ref 是否有效，并补齐元素信息
       if (action.ref !== undefined && action.ref !== null) {
-        const elementExists = context.elements.some(e => e.ref === action.ref)
-        if (!elementExists) {
+        const element = context.elements.find(e => e.ref === action.ref)
+        if (!element) {
           console.warn(`[BrowserAIParser] Selected ref ${action.ref} not found in DOM, falling back to analyze`)
           action.type = 'analyze'
           delete action.ref
+        } else {
+          // 补齐元素的完整信息（hash, stableHash 等）
+          const enrichedDesc = {
+            tag: element.tag,
+            role: element.role,
+            name: element.name,
+            text: element.text,
+            placeholder: element.placeholder,
+            type: element.type,
+            id: element.id,
+            ariaLabel: element.ariaLabel,
+            hash: element.hash,
+            stableHash: element.stableHash
+          }
+
+          if (action.type === 'type' && action.field) {
+            action.field = { ...enrichedDesc, ...action.field }
+          } else if (action.description) {
+            action.description = { ...enrichedDesc, ...action.description }
+          }
         }
       }
 
@@ -203,6 +281,7 @@ ${domDescription}
 
   /**
    * 构建 DOM 描述文本
+   * 输出格式: ref | tag | role | type | placeholder | name | text | hash | stableHash
    */
   private buildDOMDescription(context: PageContext): string {
     console.log(`[BrowserAIParser] Building DOM description from ${context.elements.length} elements`)
@@ -217,22 +296,24 @@ ${domDescription}
     // 打印前 10 个元素用于调试
     console.log('[BrowserAIParser] First 10 elements:')
     context.elements.slice(0, 10).forEach(e => {
-      console.log(`  ref=${e.ref}, tag=${e.tag}, type=${e.type}, text="${e.text?.substring(0, 30)}"`)
+      console.log(`  ref=${e.ref}, tag=${e.tag}, role=${e.role}, type=${e.type}, text="${e.text?.substring(0, 30)}"`)
     })
 
     return context.elements
       .slice(0, 50) // 限制元素数量，避免超出 token 限制
       .map(e => {
-        const attrs = [
-          e.type && `type=${e.type}`,
-          e.name && `name=${e.name}`,
-          e.placeholder && `placeholder=${e.placeholder}`,
-          e.role && `role=${e.role}`,
-          e.ariaLabel && `aria-label=${e.ariaLabel}`
-        ].filter(Boolean).join(', ')
-
-        const text = e.text ? ` | "${e.text.substring(0, 50)}"` : ''
-        return `${e.ref} | ${e.tag}${attrs ? ` | ${attrs}` : ''}${text}`
+        const parts = [
+          String(e.ref),
+          e.tag || '-',
+          e.role || '-',
+          e.type || '-',
+          e.placeholder ? `"${e.placeholder.substring(0, 30)}"` : '-',
+          e.name ? `"${e.name.substring(0, 30)}"` : '-',
+          e.text ? `"${e.text.substring(0, 40)}"` : '-',
+          e.hash ? e.hash.substring(0, 8) : '-',
+          e.stableHash ? e.stableHash.substring(0, 8) : '-'
+        ]
+        return parts.join(' | ')
       })
       .join('\n')
   }

@@ -3,16 +3,19 @@
  * 基于 Playwright，提供语义化操作和智能页面分析
  *
  * 增强功能：
- * - Snapshot 系统（role/aria/ai 三种格式）
- * - 元素稳定引用（aria-ref）
+ * - CDP 获取页面元素（browser-use 风格）
+ * - 元素稳定引用（hash + stableHash）
  * - 安全层（SSRF 防护、URL 校验）
  * - 操作历史追踪和重试
  */
 
 import { Browser, BrowserContext, Page, chromium, Locator } from 'playwright'
-import { snapshotManager, PageSnapshot, SnapshotFormat } from './browser-snapshot'
 import { BrowserSecurityGuard, defaultSecurityGuard, SecurityError } from './browser-security'
 import { DOMSerializer, SerializedDOM, domSerializer } from './dom-serializer'
+import { RobustLocator, robustLocator } from './robust-locator'
+import type { ElementSignature } from './element-hash'
+import type { BrowserUseElement } from './browser-use-dom'
+import { browserUseDOM } from './browser-use-dom'
 export interface PageElement {
   tag: string
   role?: string
@@ -46,7 +49,7 @@ export interface PageAnalysis {
 }
 
 export interface BrowserAction {
-  action: 'navigate' | 'click' | 'type' | 'select' | 'hover' | 'scroll' | 'wait' | 'screenshot' | 'analyze' | 'back' | 'forward' | 'close' | 'snapshot'
+  action: 'navigate' | 'click' | 'type' | 'select' | 'hover' | 'scroll' | 'wait' | 'screenshot' | 'analyze' | 'back' | 'forward' | 'close' | 'context'
   params: Record<string, any>
   timestamp?: number
   success?: boolean
@@ -56,10 +59,7 @@ export interface BrowserAction {
 export interface BrowserAIConfig {
   headless?: boolean
   securityGuard?: BrowserSecurityGuard
-  snapshotFormat?: SnapshotFormat
-  enableSnapshots?: boolean
   maxRetries?: number
-  // 已移除：LLM 配置移到后端
   // DOM 序列化配置
   domSerializer?: {
     maxElements?: number
@@ -74,18 +74,24 @@ export class BrowserAI {
   private context: BrowserContext | null = null
   private page: Page | null = null
   private actionHistory: BrowserAction[] = []
-  private currentSnapshot: PageSnapshot | null = null
   private currentDOM: SerializedDOM | null = null
   private config: Required<BrowserAIConfig>
   private securityGuard: BrowserSecurityGuard
   private domSerializer: DOMSerializer
+  // Browser-use style: cached element map (index -> element)
+  private currentElementMap: Map<number, BrowserUseElement> = new Map()
+  // Last captured page context
+  private lastPageContext: {
+    url: string
+    title: string
+    elements: BrowserUseElement[]
+    timestamp: number
+  } | null = null
 
   constructor(config: BrowserAIConfig = {}) {
     this.config = {
       headless: config.headless ?? false,
       securityGuard: config.securityGuard ?? defaultSecurityGuard,
-      snapshotFormat: config.snapshotFormat ?? 'role',
-      enableSnapshots: config.enableSnapshots ?? true,
       maxRetries: config.maxRetries ?? 1,
       domSerializer: config.domSerializer ?? { maxElements: 200, minElementSize: 5 }
     }
@@ -94,7 +100,6 @@ export class BrowserAI {
       maxElements: this.config.domSerializer.maxElements,
       minElementSize: this.config.domSerializer.minElementSize
     })
-
   }
 
   /**
@@ -145,29 +150,6 @@ export class BrowserAI {
   }
 
   /**
-   * 获取当前页面的 DOM 序列化
-   */
-  async getSerializedDOM(): Promise<SerializedDOM> {
-    await this.initialize()
-    const page = this.page!
-
-    const serialized = await this.domSerializer.serialize(page)
-    this.currentDOM = serialized
-
-    console.log(`[BrowserAI] DOM serialized: ${serialized.stats.finalElements} elements (${serialized.stats.sizeKB}KB)`)
-
-    return serialized
-  }
-
-  /**
-   * 获取当前 DOM 的 LLM 友好格式
-   */
-  async getLLMContext(): Promise<string> {
-    const dom = await this.getSerializedDOM()
-    return this.domSerializer.formatForLLM(dom)
-  }
-
-  /**
    * 执行浏览器动作
    * 由后端 LLM 解析指令后调用，接收结构化的动作参数
    *
@@ -177,9 +159,33 @@ export class BrowserAI {
   async executeBrowserAction(action: {
     type: string
     ref?: number
-    description?: string
+    description?: {
+      tag?: string
+      role?: string
+      name?: string
+      text?: string
+      placeholder?: string
+      type?: string
+      id?: string
+      ariaLabel?: string
+      hash?: string
+      stableHash?: string
+      bbox?: { x: number; y: number; width: number; height: number }
+    }
     text?: string
-    field?: string
+    field?: {
+      tag?: string
+      role?: string
+      name?: string
+      text?: string
+      placeholder?: string
+      type?: string
+      id?: string
+      ariaLabel?: string
+      hash?: string
+      stableHash?: string
+      bbox?: { x: number; y: number; width: number; height: number }
+    }
     url?: string
     direction?: string
     amount?: number
@@ -196,26 +202,117 @@ export class BrowserAI {
   }
 
   /**
-   * 使用 LLM 进行语义化操作
-   *
-   * 工作流程：
-   * 1. 获取序列化 DOM（五级流水线处理后约 200 个元素）
-   * 2. 构建 LLM 提示词，包含 DOM 上下文和用户指令
-   * 3. 调用 LLM 解析为结构化动作
-   * 4. 执行动作并返回结果
+   * 智能元素定位 - Browser-use style
+   * 优先使用缓存的 element map，保持一致性
    */
-  private async findElementByRef(ref: number): Promise<Locator | null> {
+  private async locateElement(signature: Partial<ElementSignature> & { index?: number }): Promise<{ locator: Locator; strategy: string } | null> {
     const page = this.page!
 
-    if (!this.currentDOM) {
-      await this.getSerializedDOM()
+    // 优先使用缓存的 element map（与 getPageContext 一致）
+    if (signature.index !== undefined && this.currentElementMap.has(signature.index)) {
+      const element = this.currentElementMap.get(signature.index)!
+      console.log(`[BrowserAI] Located element [${signature.index}] from cached map: ${element.tag}`)
+
+      // 使用元素的 bounds 和属性来定位
+      const locator = await this.findElementFromSignature(page, element)
+      if (locator) {
+        return { locator, strategy: 'cached-map' }
+      }
     }
 
-    const element = this.domSerializer.findElement(this.currentDOM!, ref)
-    if (!element) return null
+    // 缓存未命中，使用 RobustLocator（可能 DOM 已变化）
+    console.log(`[BrowserAI] Element [${signature.index}] not in cache, using fallback...`)
+    const result = await robustLocator.locate(page, signature)
 
-    // 使用坐标定位
-    return page.locator(`xpath=//*[contains(@data-bbox, '${element.bbox.x},${element.bbox.y}')]`).first()
+    if (result) {
+      console.log(`[BrowserAI] Located element using ${result.strategy} (confidence: ${result.confidence})`)
+      return { locator: result.locator, strategy: result.strategy }
+    }
+
+    return null
+  }
+
+  /**
+   * 从 BrowserUseElement 创建 Playwright Locator
+   */
+  private async findElementFromSignature(page: Page, element: BrowserUseElement): Promise<Locator | null> {
+    // 1. 优先使用 backendNodeId 通过 CDP 定位
+    if (element.backendNodeId) {
+      try {
+        const cdpSession = await page.context().newCDPSession(page)
+        try {
+          // 尝试使用 DOM.querySelector 通过 backendNodeId 定位
+          const result = await cdpSession.send('DOM.resolveNode', {
+            backendNodeId: element.backendNodeId
+          })
+          if (result && result.object && result.object.objectId) {
+            // 转换为 Playwright locator
+            // 由于无法直接从 CDP objectId 创建 locator，我们使用属性匹配
+          }
+        } finally {
+          await cdpSession.detach()
+        }
+      } catch {
+        // CDP 失败，继续用其他方法
+      }
+    }
+
+    // 2. 使用属性匹配（browser-use style）
+    const strategies: Array<() => Promise<Locator | null>> = [
+      // ID
+      async () => {
+        if (element.id) {
+          const locator = page.locator(`#${CSS.escape(element.id)}`)
+          if (await locator.count() > 0) return locator
+        }
+        return null
+      },
+      // Role + name
+      async () => {
+        if (element.name) {
+          const role = element.role || element.tag
+          const locator = page.getByRole(role as any, { name: element.name, exact: false })
+          if (await locator.count() > 0) return locator.first()
+        }
+        return null
+      },
+      // Placeholder
+      async () => {
+        if (element.placeholder) {
+          const locator = page.getByPlaceholder(element.placeholder, { exact: false })
+          if (await locator.count() > 0) return locator.first()
+        }
+        return null
+      },
+      // Tag + type
+      async () => {
+        let selector = element.tag
+        if (element.type) selector += `[type="${CSS.escape(element.type)}"]`
+        const locator = page.locator(selector)
+        if (await locator.count() > 0) return locator.first()
+        return null
+      },
+      // Coordinate (last resort)
+      async () => {
+        const { x, y, width, height } = element.bounds
+        const centerX = x + width / 2
+        const centerY = y + height / 2
+        await page.mouse.click(centerX, centerY)
+        // Return body as placeholder since we already clicked
+        return page.locator('body')
+      }
+    ]
+
+    for (const strategy of strategies) {
+      try {
+        const locator = await strategy()
+        if (locator) return locator
+      } catch {
+        continue
+      }
+    }
+
+    return null
   }
 
   /**
@@ -247,77 +344,95 @@ export class BrowserAI {
           await page.goto(action.url, { waitUntil: 'networkidle' })
           this.recordAction({ action: 'navigate', params: { url: action.url }, success: true })
 
-          // 自动捕获 snapshot
-          if (this.config.enableSnapshots) {
-            await this.captureSnapshot()
-          }
+          // 导航后更新 CDP 上下文
+          await this.refreshPageContext()
 
           return { success: true, result: `Navigated to ${page.url()}` }
 
-        case 'click':
-          // 使用 ref 或 description 查找元素
-          let clickTarget: Locator | null = null
-          if (action.ref !== undefined) {
-            clickTarget = await this.findElementByRef(action.ref)
+        case 'click': {
+          // 使用 RobustLocator 4层回退定位
+          const clickSignature: Partial<ElementSignature> & { index?: number } = {
+            index: action.ref,
+            hash: action.description?.hash,
+            stableHash: action.description?.stableHash,
+            tag: action.description?.tag,
+            role: action.description?.role,
+            name: action.description?.name || action.description?.text,
+            ariaLabel: action.description?.ariaLabel,
+            placeholder: action.description?.placeholder,
+            type: action.description?.type,
+            id: action.description?.id,
+            bounds: action.description?.bbox
           }
-          if (!clickTarget && action.description) {
-            // 降级到描述查找
-            const match = this.domSerializer.findElementByDescription(
-              this.currentDOM!,
-              action.description
-            )
-            if (match) {
-              clickTarget = await this.findElementByRef(match.id)
-            }
+
+          const clickResult = await this.locateElement(clickSignature)
+          if (!clickResult) {
+            return { success: false, result: `Element not found: ref=${action.ref}, desc=${JSON.stringify(action.description)}` }
           }
-          if (!clickTarget) {
-            return { success: false, result: `Element not found: ref=${action.ref}, desc=${action.description}` }
-          }
-          await clickTarget.click()
+
+          await clickResult.locator.click()
           await page.waitForLoadState('networkidle')
-          this.recordAction({ action: 'click', params: { ref: action.ref, description: action.description } })
-          return { success: true, result: `Clicked on element [${action.ref}]` }
+          this.recordAction({ action: 'click', params: { ref: action.ref, description: action.description, strategy: clickResult.strategy } })
 
-        case 'type':
-          let inputTarget: Locator | null = null
-          if (action.ref !== undefined) {
-            inputTarget = await this.findElementByRef(action.ref)
-          }
-          if (!inputTarget && action.field) {
-            const match = this.domSerializer.findElementByDescription(
-              this.currentDOM!,
-              action.field
-            )
-            if (match) {
-              inputTarget = await this.findElementByRef(match.id)
-            }
-          }
-          if (!inputTarget) {
-            return { success: false, result: `Input field not found: ref=${action.ref}, field=${action.field}` }
-          }
-          await inputTarget.fill(action.text)
-          this.recordAction({ action: 'type', params: { ref: action.ref, text: action.text } })
-          return { success: true, result: `Typed "${action.text}" into element [${action.ref}]` }
+          return { success: true, result: `Clicked on element [${action.ref}] using ${clickResult.strategy}` }
+        }
 
-        case 'select':
-          let selectTarget: Locator | null = null
-          if (action.ref !== undefined) {
-            selectTarget = await this.findElementByRef(action.ref)
+        case 'type': {
+          // 使用 RobustLocator 4层回退定位
+          const typeSignature: Partial<ElementSignature> & { index?: number } = {
+            index: action.ref,
+            hash: action.field?.hash,
+            stableHash: action.field?.stableHash,
+            tag: action.field?.tag || 'input',
+            role: action.field?.role || 'textbox',
+            name: action.field?.name,
+            ariaLabel: action.field?.ariaLabel,
+            placeholder: action.field?.placeholder,
+            type: action.field?.type,
+            id: action.field?.id,
+            bounds: action.field?.bbox
           }
-          if (!selectTarget) {
+
+          const typeResult = await this.locateElement(typeSignature)
+          if (!typeResult) {
+            return { success: false, result: `Input field not found: ref=${action.ref}, field=${JSON.stringify(action.field)}` }
+          }
+
+          await typeResult.locator.fill(action.text)
+          this.recordAction({ action: 'type', params: { ref: action.ref, text: action.text, strategy: typeResult.strategy } })
+
+          return { success: true, result: `Typed "${action.text}" into element [${action.ref}] using ${typeResult.strategy}` }
+        }
+
+        case 'select': {
+          const selectSignature: Partial<ElementSignature> & { index?: number } = {
+            index: action.ref,
+            tag: 'select',
+            role: 'combobox',
+            name: action.description?.name
+          }
+          const selectResult = await this.locateElement(selectSignature)
+          if (!selectResult) {
             return { success: false, result: `Select field not found: ref=${action.ref}` }
           }
-          await selectTarget.selectOption(action.option)
-          this.recordAction({ action: 'select', params: { ref: action.ref, option: action.option } })
-          return { success: true, result: `Selected "${action.option}" in element [${action.ref}]` }
+          await selectResult.locator.selectOption(action.option)
+          this.recordAction({ action: 'select', params: { ref: action.ref, option: action.option, strategy: selectResult.strategy } })
+          return { success: true, result: `Selected "${action.option}" in element [${action.ref}] using ${selectResult.strategy}` }
+        }
 
-        case 'scroll':
+        case 'scroll': {
           if (action.ref !== undefined) {
-            const scrollTarget = await this.findElementByRef(action.ref)
-            if (scrollTarget) {
-              await scrollTarget.scrollIntoViewIfNeeded()
-              this.recordAction({ action: 'scroll', params: { ref: action.ref } })
-              return { success: true, result: `Scrolled to element [${action.ref}]` }
+            const scrollSignature: Partial<ElementSignature> & { index?: number } = {
+              index: action.ref,
+              tag: action.description?.tag,
+              role: action.description?.role,
+              name: action.description?.name
+            }
+            const scrollResult = await this.locateElement(scrollSignature)
+            if (scrollResult) {
+              await scrollResult.locator.scrollIntoViewIfNeeded()
+              this.recordAction({ action: 'scroll', params: { ref: action.ref, strategy: scrollResult.strategy } })
+              return { success: true, result: `Scrolled to element [${action.ref}] using ${scrollResult.strategy}` }
             }
             return { success: false, result: `Element not found for scroll: ref=${action.ref}` }
           } else {
@@ -327,6 +442,7 @@ export class BrowserAI {
             this.recordAction({ action: 'scroll', params: { direction: action.direction, amount: action.amount } })
             return { success: true, result: `Scrolled ${action.direction} by ${amount}px` }
           }
+        }
 
         case 'wait':
           if (action.selector) {
@@ -586,73 +702,78 @@ export class BrowserAI {
   }
 
   /**
-   * 捕获当前页面 Snapshot
+   * 刷新页面上下文（使用 CDP）
    */
-  async captureSnapshot(format?: SnapshotFormat): Promise<PageSnapshot> {
+  async refreshPageContext(): Promise<{
+    url: string
+    title: string
+    elements: BrowserUseElement[]
+  }> {
     await this.initialize()
     const page = this.page!
 
-    const snapshot = await snapshotManager.capture(page, {
-      format: format || this.config.snapshotFormat,
-      interactiveOnly: true,
-      compact: true
+    const url = page.url()
+    const title = await page.title()
+
+    // 使用 CDP 获取元素
+    const elements = await browserUseDOM.getInteractiveElements(page)
+
+    // 更新缓存
+    this.currentElementMap.clear()
+    elements.forEach(el => {
+      this.currentElementMap.set(el.index, el)
     })
 
-    this.currentSnapshot = snapshot
+    // 保存上下文
+    this.lastPageContext = {
+      url,
+      title,
+      elements,
+      timestamp: Date.now()
+    }
+
     this.recordAction({
-      action: 'snapshot',
-      params: { format: snapshot.format },
+      action: 'context',
+      params: { url, elementCount: elements.length },
       success: true
     })
 
-    return snapshot
+    return { url, title, elements }
   }
 
   /**
-   * 获取当前 Snapshot
+   * 通过索引执行点击（基于 CDP）
    */
-  getCurrentSnapshot(): PageSnapshot | null {
-    return this.currentSnapshot
-  }
-
-  /**
-   * 通过 ref 执行点击（支持稳定引用）
-   */
-  async clickByRef(ref: string): Promise<{ success: boolean; result: string }> {
+  async clickByIndex(index: number): Promise<{ success: boolean; result: string }> {
     await this.initialize()
     const page = this.page!
 
-    // 如果没有当前 snapshot，先捕获一个
-    if (!this.currentSnapshot) {
-      await this.captureSnapshot()
+    // 如果缓存中没有，刷新上下文
+    if (!this.currentElementMap.has(index)) {
+      await this.refreshPageContext()
     }
 
-    if (!this.currentSnapshot) {
-      return { success: false, result: 'Failed to capture page snapshot' }
+    const element = this.currentElementMap.get(index)
+    if (!element) {
+      return { success: false, result: `Element with index [${index}] not found` }
     }
 
-    // 查找元素
-    const locator = await snapshotManager.findByRef(page, ref, this.currentSnapshot)
+    const locator = await this.findElementFromSignature(page, element)
     if (!locator) {
-      return { success: false, result: `Element with ref '${ref}' not found` }
+      return { success: false, result: `Could not locate element [${index}]` }
     }
 
     try {
       await locator.click()
       await page.waitForLoadState('networkidle')
 
-      // 重新捕获 snapshot
-      if (this.config.enableSnapshots) {
-        await this.captureSnapshot()
-      }
-
       this.recordAction({
         action: 'click',
-        params: { ref },
+        params: { index },
         success: true
       })
 
-      return { success: true, result: `Clicked element [${ref}]` }
+      return { success: true, result: `Clicked element [${index}]` }
     } catch (error) {
       return {
         success: false,
@@ -662,25 +783,25 @@ export class BrowserAI {
   }
 
   /**
-   * 通过 ref 输入文本（支持稳定引用）
+   * 通过索引输入文本（基于 CDP）
    */
-  async typeByRef(ref: string, text: string): Promise<{ success: boolean; result: string }> {
+  async typeByIndex(index: number, text: string): Promise<{ success: boolean; result: string }> {
     await this.initialize()
     const page = this.page!
 
-    // 如果没有当前 snapshot，先捕获一个
-    if (!this.currentSnapshot) {
-      await this.captureSnapshot()
+    // 如果缓存中没有，刷新上下文
+    if (!this.currentElementMap.has(index)) {
+      await this.refreshPageContext()
     }
 
-    if (!this.currentSnapshot) {
-      return { success: false, result: 'Failed to capture page snapshot' }
+    const element = this.currentElementMap.get(index)
+    if (!element) {
+      return { success: false, result: `Element with index [${index}] not found` }
     }
 
-    // 查找元素
-    const locator = await snapshotManager.findByRef(page, ref, this.currentSnapshot)
+    const locator = await this.findElementFromSignature(page, element)
     if (!locator) {
-      return { success: false, result: `Element with ref '${ref}' not found` }
+      return { success: false, result: `Could not locate element [${index}]` }
     }
 
     try {
@@ -688,11 +809,11 @@ export class BrowserAI {
 
       this.recordAction({
         action: 'type',
-        params: { ref, text },
+        params: { index, text },
         success: true
       })
 
-      return { success: true, result: `Typed "${text}" into element [${ref}]` }
+      return { success: true, result: `Typed "${text}" into element [${index}]` }
     } catch (error) {
       return {
         success: false,
@@ -702,24 +823,57 @@ export class BrowserAI {
   }
 
   /**
-   * 获取页面 LLM 友好摘要（基于 Snapshot）
+   * 获取页面 LLM 友好摘要（基于 CDP）
    */
   async getPageSummary(): Promise<string> {
-    // 如果没有当前 snapshot，先捕获一个
-    if (!this.currentSnapshot) {
-      await this.captureSnapshot()
+    // 如果没有当前上下文，先获取一个
+    if (!this.lastPageContext) {
+      await this.refreshPageContext()
     }
 
-    if (!this.currentSnapshot) {
-      return 'Failed to capture page snapshot'
+    if (!this.lastPageContext) {
+      return 'Failed to capture page context'
     }
 
-    return snapshotManager.toAIFormat(this.currentSnapshot)
+    const { url, title, elements } = this.lastPageContext
+    const lines: string[] = []
+
+    lines.push(`Page: ${title}`)
+    lines.push(`URL: ${url}`)
+    lines.push('')
+    lines.push('Available Elements:')
+    lines.push('')
+
+    elements.forEach((el) => {
+      const role = el.role || el.tag
+      const name = el.name || el.placeholder || el.ariaLabel || '(unnamed)'
+
+      let line = `[${el.index}] <${el.tag}>`
+
+      if (role && role !== el.tag) {
+        line += ` role="${role}"`
+      }
+
+      if (name && name !== '(unnamed)') {
+        line += ` name="${name.substring(0, 50)}"`
+      }
+
+      if (el.type) {
+        line += ` type="${el.type}"`
+      }
+
+      lines.push(line)
+    })
+
+    lines.push('')
+    lines.push(`Total: ${elements.length} interactive elements`)
+
+    return lines.join('\n')
   }
 
   /**
    * 获取页面上下文（用于服务端 AI 解析）
-   * 返回页面 URL、标题和可交互元素列表
+   * 使用 CDP 获取元素，确保与 executeAction 一致
    */
   async getPageContext(): Promise<{
     url: string
@@ -727,115 +881,47 @@ export class BrowserAI {
     elements: Array<{
       ref: number
       tag: string
+      id?: string
       type?: string
       name?: string
       placeholder?: string
       text?: string
       role?: string
       ariaLabel?: string
+      hash?: string
+      stableHash?: string
     }>
   }> {
     await this.initialize()
-    const page = this.page!
 
-    const url = page.url()
-    const title = await page.title()
+    const context = await this.refreshPageContext()
 
-    console.log(`[BrowserAI] getPageContext start - URL: ${url}, Title: ${title}`)
+    const elements = context.elements.map(el => ({
+      ref: el.index,
+      tag: el.tag,
+      id: el.id,
+      type: el.type,
+      name: el.name,
+      placeholder: el.placeholder,
+      text: el.name || el.placeholder || el.ariaLabel,
+      role: el.role || el.tag,
+      ariaLabel: el.ariaLabel,
+      hash: el.hash,
+      stableHash: el.stableHash
+    }))
 
-    console.log(`[BrowserAI] Starting page.evaluate...`)
+    console.log(`[BrowserAI] Page context: ${elements.length} elements at ${context.url}`)
 
-    // 提取可交互元素
-    const result = await page.evaluate(() => {
-      const logs: string[] = []
-      logs.push(`[BrowserAI] page.evaluate started`)
-      logs.push(`[BrowserAI] document.URL: ${document.URL}`)
-      logs.push(`[BrowserAI] document.title: ${document.title}`)
-      logs.push(`[BrowserAI] document.body exists: ${!!document.body}`)
-      if (document.body) {
-        logs.push(`[BrowserAI] document.body.innerHTML length: ${document.body.innerHTML.length}`)
-        logs.push(`[BrowserAI] document.body children count: ${document.body.children.length}`)
-      }
-
-      const interactiveSelectors = [
-        'input[type="text"]',
-        'input[type="search"]',
-        'input[type="email"]',
-        'input[type="password"]',
-        'input[type="submit"]',
-        'input[type="button"]',
-        'button',
-        'a[href]',
-        'textarea',
-        'select',
-        '[role="button"]',
-        '[role="link"]',
-        '[role="textbox"]',
-        '[role="searchbox"]',
-        '[contenteditable="true"]'
-      ]
-
-      const results: Array<{
-        ref: number
-        tag: string
-        type?: string
-        name?: string
-        placeholder?: string
-        text?: string
-        role?: string
-        ariaLabel?: string
-      }> = []
-
-      let refCounter = 1
-
-      interactiveSelectors.forEach(selector => {
-        const elements = document.querySelectorAll(selector)
-
-        if (elements.length > 0) {
-          logs.push(`[BrowserAI] Selector "${selector}" found ${elements.length} elements`)
-        }
-        elements.forEach(el => {
-          const rect = el.getBoundingClientRect()
-          const elId = el.id || '(no id)'
-          logs.push(`[BrowserAI] Element: ${el.tagName}#${elId}, visible=${rect.width > 0 && rect.height > 0}, size=${rect.width}x${rect.height}`)
-          // 只包含可见元素
-          if (rect.width === 0 || rect.height === 0) {
-            logs.push(`[BrowserAI]   -> skipped (not visible)`)
-            return
-          }
-
-          const text = el.textContent?.trim().substring(0, 100) ||
-                      (el as HTMLInputElement).value?.substring(0, 100) ||
-                      (el as HTMLInputElement).placeholder ||
-                      ''
-
-          const elementData = {
-            ref: refCounter++,
-            tag: el.tagName.toLowerCase(),
-            type: (el as HTMLInputElement).type,
-            name: (el as HTMLInputElement).name,
-            placeholder: (el as HTMLInputElement).placeholder,
-            text: text || undefined,
-            role: el.getAttribute('role') || undefined,
-            ariaLabel: el.getAttribute('aria-label') || undefined
-          }
-
-          logs.push(`[BrowserAI]   -> ADDED ref=${elementData.ref}, tag=${elementData.tag}, placeholder="${elementData.placeholder?.substring(0, 20)}"`)
-          results.push(elementData)
-        })
-      })
-
-      logs.push(`[BrowserAI] Total elements found: ${results.length}`)
-      return { elements: results, logs }
+    // 打印前 10 个元素用于调试
+    elements.slice(0, 10).forEach(el => {
+      console.log(`[BrowserAI]   ref=${el.ref}, tag=${el.tag}, role=${el.role}, name="${el.name?.substring(0, 20)}"`)
     })
 
-    const elements = result.elements
-    // 打印从页面 evaluate 返回的日志
-    result.logs.forEach(log => console.log(log))
-
-    console.log(`[BrowserAI] Page context: ${elements.length} elements at ${url}`)
-
-    return { url, title, elements }
+    return {
+      url: context.url,
+      title: context.title,
+      elements
+    }
   }
 
   /**
@@ -876,6 +962,8 @@ export class BrowserAI {
       this.context = null
       this.page = null
       this.actionHistory = []
+      this.currentElementMap.clear()
+      this.lastPageContext = null
       console.log('[BrowserAI] Browser closed')
     }
   }
