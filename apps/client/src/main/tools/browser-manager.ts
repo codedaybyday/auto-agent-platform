@@ -177,6 +177,12 @@ export class BrowserManager {
       this.pages.delete(sessionId)
       console.log(`[BrowserManager] Session removed from map. Remaining tabs: ${this.pages.size}`)
       console.log(`[BrowserManager] Remaining sessions: ${Array.from(this.pages.keys()).join(', ') || 'none'}`)
+
+      // 如果所有会话都已关闭，关闭浏览器
+      if (this.pages.size === 0) {
+        console.log('[BrowserManager] All sessions closed, closing browser')
+        await this.closeBrowser()
+      }
     } else {
       console.log(`[BrowserManager] No tab found for session: ${sessionId}`)
     }
