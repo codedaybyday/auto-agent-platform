@@ -77,7 +77,7 @@ export class DOMSerializer {
   }
 
   /**
-   * 序列化页面 DOM
+   * 序列化页面 DOM，并向页面元素注入 data-ref 属性以便后续定位
    */
   async serialize(page: Page): Promise<SerializedDOM> {
     const startTime = Date.now()
@@ -108,9 +108,11 @@ export class DOMSerializer {
 
       /**
        * 检查元素是否可见
+       * 对输入框和按钮更宽松，避免被自动补全下拉框遮挡误判
        */
       function isVisible(element: Element): boolean {
         const style = window.getComputedStyle(element)
+        const tag = element.tagName.toLowerCase()
 
         // 检查 display
         if (style.display === 'none') return false
@@ -125,14 +127,18 @@ export class DOMSerializer {
         const rect = element.getBoundingClientRect()
         if (rect.width === 0 || rect.height === 0) return false
 
-        // 检查是否在视口内（或附近）
+        // 对输入框和按钮更宽松：只要在视口范围内就认为是可见的
+        // 避免被自动补全下拉框遮挡导致误判
+        const isInputOrButton = tag === 'input' || tag === 'button' || tag === 'textarea'
         const viewportHeight = window.innerHeight
         const viewportWidth = window.innerWidth
 
+        // 更宽松的视口检查
+        const multiplier = isInputOrButton ? 5 : 2
         if (rect.bottom < -viewportHeight ||
-            rect.top > viewportHeight * 2 ||
+            rect.top > viewportHeight * multiplier ||
             rect.right < -viewportWidth ||
-            rect.left > viewportWidth * 2) {
+            rect.left > viewportWidth * multiplier) {
           return false
         }
 
@@ -460,7 +466,7 @@ export class DOMSerializer {
       }
 
       /**
-       * 分配索引并生成最终列表
+       * 分配索引并生成最终列表，同时向 DOM 元素注入 data-ref 属性
        */
       function assignIndices(candidates: CandidateElement[]): FinalElement[] {
         // 按优先级排序
@@ -502,15 +508,21 @@ export class DOMSerializer {
           }
         }
 
-        // 分配 ID
-        return unique
+        // 分配 ID 并向 DOM 元素注入 data-ref 属性
+        const finalElements = unique
           .slice(0, opts.maxElements)
-          .map((c, index) => ({
-            id: index,
-            ...c.info,
-            bbox: c.bbox,
-            center: c.center
-          }))
+          .map((c, index) => {
+            // 向原始 DOM 元素注入 data-ref 属性，用于后续定位
+            c.element.setAttribute('data-ref', String(index))
+            return {
+              id: index,
+              ...c.info,
+              bbox: c.bbox,
+              center: c.center
+            }
+          })
+
+        return finalElements
       }
 
       // ============================================
