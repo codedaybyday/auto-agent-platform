@@ -54,6 +54,7 @@ export interface AgentAPI {
   onSessionSwitched: (callback: (sessionId: string) => void) => () => void
   login: () => Promise<{ success: boolean; error?: string }>
   whoami: () => Promise<{ success: boolean; error?: string, data: any }>
+  logout: () => Promise<{ success: boolean; error?: string }>
 }
 
 /**
@@ -129,7 +130,8 @@ const agentAPI: AgentAPI = {
   },
   // sso
   login: () => ipcRenderer.invoke('sso:login'),
-  whoami: () => ipcRenderer.invoke('sso:whoami')
+  whoami: () => ipcRenderer.invoke('sso:whoami'),
+  logout: () => ipcRenderer.invoke('sso:logout')
 }
 
 const api = {

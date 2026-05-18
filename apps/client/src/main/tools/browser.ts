@@ -69,12 +69,16 @@ Available actions:
   async initialize(): Promise<void> {
     if (!this.state.browser) {
       this.state.browser = await chromium.launch({
-        headless: false
+        headless: false,
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--disable-web-security'
+        ]
       })
-      this.state.context = await (this.state.browser as Browser).newContext({
+      this.state.context = await this.state.browser.newContext({
         viewport: { width: 1280, height: 720 }
       })
-      this.state.page = await (this.state.context as BrowserContext).newPage()
+      this.state.page = await this.state.context.newPage()
     }
   }
 
