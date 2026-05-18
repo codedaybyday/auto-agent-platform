@@ -64,21 +64,26 @@ function App(): JSX.Element {
   const currentSessionIdRef = useRef<string | null>(null)
 
   // ==================== 所有 Effects 必须在最顶层声明 ====================
+  const handleLogin = async () => {
+    const check = await window.api.agent.whoami()
+    console.log('app check result: ', check)
+    if (check.success) return setUserInfo(check.data)
+
+    const login = await window.api.agent.login()
+    console.log('app login result: ', login)
+    if (!login.success) return
+
+    const retry = await window.api.agent.whoami()
+    if (retry.success) setUserInfo(retry.data)
+  }
+
   useEffect(() => {
-    async function ensureLogin() {
-      const check = await window.api.agent.whoami()
-      console.log('app check result: ', check)
-      if (check.success) return setUserInfo(check.data)
-
-      const login = await window.api.agent.login()
-      console.log('app login result: ', login)
-      if (!login.success) return
-
-      const retry = await window.api.agent.whoami()
-      if (retry.success) setUserInfo(retry.data)
-    }
-
-    if (!userInfo) ensureLogin().catch(console.error)
+    // 组件挂载时检查登录状态，但不自动触发登录
+    window.api.agent.whoami().then(result => {
+      if (result.success) {
+        setUserInfo(result.data)
+      }
+    }).catch(console.error)
   }, [])
 
   // 同步 ref 和 state
@@ -323,6 +328,22 @@ function App(): JSX.Element {
     }
   }
 
+  const handleLogout = async () => {
+    const result = await window.api.agent.logout()
+    if (result.success) {
+      // 重置所有状态
+      setUserInfo(null)
+      setMessages([])
+      setSessions([])
+      setCurrentSessionId(null)
+      setIsConnected(false)
+      setError(null)
+      console.log('[App] Logout successful')
+    } else {
+      setError(result.error || '退出登录失败')
+    }
+  }
+
   // ==================== 条件渲染（在所有 Hooks 之后）====================
   if (!userInfo) {
     return (
@@ -334,9 +355,10 @@ function App(): JSX.Element {
             <p className="login-subtitle">智能自动化助手</p>
           </div>
           <div className="login-content">
-            <div className="login-spinner"></div>
-            <p className="login-text">等待登录...</p>
-            <p className="login-hint">请完成授权以继续使用</p>
+            <button className="login-btn" onClick={handleLogin}>
+              登录
+            </button>
+            <p className="login-hint">点击登录以继续使用</p>
           </div>
         </div>
       </div>
@@ -378,6 +400,13 @@ function App(): JSX.Element {
               <span className="user-name" title={userInfo.name}>
                 {userInfo.name}
               </span>
+              <button
+                className="logout-btn"
+                onClick={handleLogout}
+                title="退出登录"
+              >
+                退出
+              </button>
             </div>
           )}
 
