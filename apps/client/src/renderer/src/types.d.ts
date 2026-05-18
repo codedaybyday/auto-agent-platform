@@ -54,6 +54,8 @@ export interface AgentAPI {
   login: () => Promise<{ success: boolean; error?: string }>
   /** SSO 查询当前登录用户 */
   whoami: () => Promise<{ success: boolean; error?: string, data: any }>
+  /** SSO 登出 */
+  logout: () => Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

@@ -34,7 +34,7 @@ importers:
         version: 2.0.1(electron@33.4.11)
       '@mtfe/sso-web-oidc-cli':
         specifier: ^1.4.1
-        version: 1.4.1
+        version: 1.4.1(encoding@0.1.13)
       electron-store:
         specifier: ^11.0.2
         version: 11.0.2
@@ -1645,6 +1645,9 @@ packages:
   encodeurl@2.0.0:
     resolution: {integrity: sha1-e46omAd9fkCdOsRUdOo46vCFelg=, tarball: http://r.npm.sankuai.com/encodeurl/download/encodeurl-2.0.0.tgz}
     engines: {node: '>= 0.8'}
+
+  encoding@0.1.13:
+    resolution: {integrity: sha1-VldK/deR9UqOmyeFwFgqLSYhD6k=, tarball: http://r.npm.sankuai.com/encoding/download/encoding-0.1.13.tgz}
 
   encrypted-electron-store@0.5.0:
     resolution: {integrity: sha512-JDfXcSyPPnr8QA1pJWf2yx1bJFYYtGmT7x4KYb1QR7tZT6eqwfbK2vn5ukOM1NRhmbg6+TdHsbnDwKBWl8TecQ==, tarball: https://registry.npmjs.org/encrypted-electron-store/-/encrypted-electron-store-0.5.0.tgz}
@@ -4058,10 +4061,10 @@ snapshots:
       crypto-js: 4.2.0
       query-string: 7.1.3
 
-  '@mtfe/sso-web-oidc-cli@1.4.1':
+  '@mtfe/sso-web-oidc-cli@1.4.1(encoding@0.1.13)':
     dependencies:
       '@mtfe/sso-web-oidc-base': 1.3.5
-      node-fetch: 2.7.0
+      node-fetch: 2.7.0(encoding@0.1.13)
       open: 8.4.2
       proper-lockfile: 4.1.2
     transitivePeerDependencies:
@@ -5134,6 +5137,11 @@ snapshots:
   emoji-regex@9.2.2: {}
 
   encodeurl@2.0.0: {}
+
+  encoding@0.1.13:
+    dependencies:
+      iconv-lite: 0.6.3
+    optional: true
 
   encrypted-electron-store@0.5.0: {}
 
@@ -6577,9 +6585,11 @@ snapshots:
       object.entries: 1.1.9
       semver: 6.3.1
 
-  node-fetch@2.7.0:
+  node-fetch@2.7.0(encoding@0.1.13):
     dependencies:
       whatwg-url: 5.0.0
+    optionalDependencies:
+      encoding: 0.1.13
 
   node-releases@2.0.44: {}
 

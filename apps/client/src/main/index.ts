@@ -1,10 +1,11 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import fs from 'fs'
 // import type { Message } from '@auto-agent/shared-types'
 // @ts-ignore
 import WebSocket from 'ws'
-import { SSOCliClient, SSOAccessEnvType } from '@mtfe/sso-web-oidc-cli'
-import ssoTokenStorage from './sso-token-storage'
+import { SSOCliClient, SSOAccessEnvType, SimpleFileTokenStorage } from '@mtfe/sso-web-oidc-cli'
+// import ssoTokenStorage from './sso-token-storage'
 
 let mainWindow: BrowserWindow | null = null
 let ws: WebSocket | null = null
@@ -23,16 +24,26 @@ const HTTP_BASE_URL = SERVER_URL.replace(/^ws/, 'http').replace(/\/ws$/, '')
 
 let ssoClient: SSOCliClient;
 
+const CLIENT_ID = '3e64c59645' // 测试环境
+const tokenFilePath = join(app.getPath('userData'), 'sso', `${SSOAccessEnvType.test}_${CLIENT_ID}.json`)
+console.log(join(app.getPath('userData'), 'sso'))
+const fileTokenStorage = new SimpleFileTokenStorage({
+  clientId: CLIENT_ID,
+  accessEnv: SSOAccessEnvType.test,
+  storageDir: join(app.getPath('userData'), 'sso'),
+})
+
 function initSSOClient() {
   const accessEnv = SSOAccessEnvType.test; // 或 SSOAccessEnvType.product
   
   ssoClient = new SSOCliClient({
-    clientId: '3e64c59645', // 测试环境
+    clientId: CLIENT_ID, // 测试环境
     accessEnv,
-    localPortList: [5173], // 自定义
+    localPortList: [8084, 8085], // 自定义
     isDebug: process.env.NODE_ENV === 'development',
-    // tokenStorage: ssoTokenStorage,
+    tokenStorage: fileTokenStorage
   });
+
 }
 
 function createWindow(): void {
@@ -769,7 +780,7 @@ function bindIpcEvents() {
 
       // 登出成功后清空 token 信息
       if (result && result.code === 0) {
-        await ssoTokenStorage.clear();
+        fs.rmSync(tokenFilePath)
         console.debug('SSO token 已清空');
       }
 
