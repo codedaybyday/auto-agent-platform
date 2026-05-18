@@ -48,12 +48,22 @@ const mergeMessages = (existing: Message[], incoming: Message[]): Message[] => {
 const processedMessageIds = new Set<string>()
 
 function App(): JSX.Element {
+  // ==================== 所有 State 必须在最顶层声明 ====================
   const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat')
   const [messages, setMessages] = useState<Message[]>([])
-  const messagesRef = useRef<Message[]>([])
-  const [isLogin, setIsLogin] = useState(false)
   const [userInfo, setUserInfo] = useState<any>(null)
+  const [processingMap, setProcessingMap] = useState<Map<string, boolean>>(new Map())
+  const [isConnected, setIsConnected] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
 
+  // ==================== 所有 Ref 必须在最顶层声明 ====================
+  const messagesRef = useRef<Message[]>([])
+  const processingMapRef = useRef<Map<string, boolean>>(new Map())
+  const currentSessionIdRef = useRef<string | null>(null)
+
+  // ==================== 所有 Effects 必须在最顶层声明 ====================
   useEffect(() => {
     async function ensureLogin() {
       const check = await window.api.agent.whoami()
@@ -71,52 +81,21 @@ function App(): JSX.Element {
     if (!userInfo) ensureLogin().catch(console.error)
   }, [])
 
-  if (!userInfo) {
-    return (
-      <div className="login-container">
-        <div className="login-card">
-          <div className="login-logo">
-            <div className="login-icon">🤖</div>
-            <h1 className="login-title">Auto Agent</h1>
-            <p className="login-subtitle">智能自动化助手</p>
-          </div>
-          <div className="login-content">
-            <div className="login-spinner"></div>
-            <p className="login-text">等待登录...</p>
-            <p className="login-hint">请完成授权以继续使用</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
+  // 同步 ref 和 state
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
-
-  // 按会话管理处理状态：sessionId -> boolean
-  const [processingMap, setProcessingMap] = useState<Map<string, boolean>>(new Map())
-  const processingMapRef = useRef<Map<string, boolean>>(new Map())
 
   useEffect(() => {
     processingMapRef.current = processingMap
   }, [processingMap])
 
-  const [isConnected, setIsConnected] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  // 多会话状态
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-
-  // 当前会话是否处理中（必须在 currentSessionId 定义之后）
-  const isProcessing = currentSessionId ? processingMap.get(currentSessionId) || false : false
-  const currentSessionIdRef = useRef<string | null>(null)
-
-  // 同步 ref 和 state
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId
   }, [currentSessionId])
+
+  // ==================== 计算属性（在 Hooks 之后）====================
+  const isProcessing = currentSessionId ? processingMap.get(currentSessionId) || false : false
 
   useEffect(() => {
     // 初始化 Agent，完成后加载会话列表
@@ -344,6 +323,26 @@ function App(): JSX.Element {
     }
   }
 
+  // ==================== 条件渲染（在所有 Hooks 之后）====================
+  if (!userInfo) {
+    return (
+      <div className="login-container">
+        <div className="login-card">
+          <div className="login-logo">
+            <div className="login-icon">🤖</div>
+            <h1 className="login-title">Auto Agent</h1>
+            <p className="login-subtitle">智能自动化助手</p>
+          </div>
+          <div className="login-content">
+            <div className="login-spinner"></div>
+            <p className="login-text">等待登录...</p>
+            <p className="login-hint">请完成授权以继续使用</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -372,10 +371,23 @@ function App(): JSX.Element {
         </nav>
 
         <div className="sidebar-footer">
-          <div className={`connection-dot ${isConnected ? 'connected' : 'disconnected'}`} />
-          <span className="connection-text">
-            {isConnected ? '已连接' : '未连接'}
-          </span>
+          {/* 用户信息 */}
+          {userInfo?.name && (
+            <div className="user-info">
+              <span className="user-avatar">👤</span>
+              <span className="user-name" title={userInfo.name}>
+                {userInfo.name}
+              </span>
+            </div>
+          )}
+
+          {/* 连接状态 */}
+          <div className="connection-status">
+            <div className={`connection-dot ${isConnected ? 'connected' : 'disconnected'}`} />
+            <span className="connection-text">
+              {isConnected ? '已连接' : '未连接'}
+            </span>
+          </div>
         </div>
       </aside>
 
