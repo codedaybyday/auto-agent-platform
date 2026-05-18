@@ -154,7 +154,13 @@ auto-agent-platform/
 │   │   ├── main/        # 主进程（Browser/Bash 工具）
 │   │   └── preload/     # Preload 脚本
 │   └── server/          # Node.js 服务端
-│       ├── services/    # 业务服务层
+│       ├── routes/             # HTTP API 路由
+│       │   ├── index.ts        # 路由汇总 + 中间件
+│       │   ├── health.ts       # 健康检查
+│       │   ├── sessions.ts     # 会话管理 CRUD
+│       │   ├── messages.ts     # 消息发送/获取/清除
+│       │   └── debug.ts        # 开发调试
+│       ├── services/           # 业务服务层
 │       │   ├── agent/          # Agent 核心
 │       │   │   ├── loop.ts     # Agent Loop 核心（ReAct）
 │       │   │   ├── session.ts  # 会话管理
@@ -168,6 +174,8 @@ auto-agent-platform/
 │       │   ├── rate-limiter.ts # 限流器
 │       │   └── __tests__/      # 单元测试
 │       ├── websocket/   # WebSocket 网关
+│       ├── app.ts       # Express 应用配置
+│       ├── server.ts    # 服务器启动逻辑
 │       └── types/       # 类型定义
 ├── packages/
 │   ├── shared-types/    # 共享类型
