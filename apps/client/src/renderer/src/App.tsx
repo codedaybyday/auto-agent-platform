@@ -52,13 +52,26 @@ function App(): JSX.Element {
   const [messages, setMessages] = useState<Message[]>([])
   const messagesRef = useRef<Message[]>([])
   const [isLogin, setIsLogin] = useState(false)
+  const [userInfo, setUserInfo] = useState<any>(null)
 
-  if (isLogin) {
-    // window.api.agent.login().then(res => {
-    //   if (res.success) {
-    //     setIsLogin(true)
-    //   }
-    // });
+  useEffect(() => {
+    async function ensureLogin() {
+      const check = await window.api.agent.whoami()
+      console.log('app check result: ', check)
+      if (check.success) return setUserInfo(check.data)
+
+      const login = await window.api.agent.login()
+      console.log('app login result: ', login)
+      if (!login.success) return
+
+      const retry = await window.api.agent.whoami()
+      if (retry.success) setUserInfo(retry.data)
+    }
+
+    if (!userInfo) ensureLogin().catch(console.error)
+  }, [])
+
+  if (!userInfo) {
     return (
       <div className="login-container">
         <div className="login-card">

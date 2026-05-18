@@ -15,7 +15,6 @@ class SSOTokenStorage {
   private TOKEN_KEY: string;
 
   constructor() {
-
     // 应用服务名称，用于在系统密钥链中标识
     this.serviceName = 'sso-electron-auto-agent';
     this.store = EncryptedStore.create<any>();
