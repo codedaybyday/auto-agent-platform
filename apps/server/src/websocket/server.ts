@@ -6,7 +6,7 @@
 import { WebSocketServer, WebSocket } from 'ws'
 import type { Server } from 'http'
 import type { WSConnection, WSMessage, MessageType } from '../types/index.js'
-import { SessionManager } from '../services/session-manager.js'
+import { SessionManager } from '../services/agent/session.js'
 import { EventBus } from './event-bus.js'
 import { RateLimiter } from '../services/rate-limiter.js'
 

@@ -5,7 +5,7 @@
  * 支持基于页面 DOM 上下文的智能解析
  */
 
-import { LLMClient } from './llm-client.js'
+import { LLMClient } from './client.js'
 
 export interface PageElement {
   ref: number

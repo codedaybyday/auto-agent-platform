@@ -3,8 +3,8 @@
  * 负责接收所有 AgentLoop 事件，并路由到对应的用户连接
  */
 
-import type { AgentLoop } from '../services/agent-loop.js'
-import type { SessionManager } from '../services/session-manager.js'
+import type { AgentLoop } from '../services/agent/loop.js'
+import type { SessionManager } from '../services/agent/session.js'
 
 export interface AgentEvent {
   sessionId: string

@@ -14,10 +14,10 @@ import cors from 'cors'
 import { createServer } from 'http'
 import { config } from './config/index.js'
 import { authMiddleware, AuthRequest } from './middleware/auth.js'
-import { SessionManager } from './services/session-manager.js'
+import { SessionManager } from './services/agent/session.js'
 import { WebSocketGateway } from './websocket/server.js'
 import { rateLimiter } from './services/rate-limiter.js'
-// import { AgentLoop } from './services/agent-loop.js'
+// import { AgentLoop } from './services/agent/loop.js'
 
 // 生成实例 ID（用于多实例部署时区分）
 const INSTANCE_ID = `${process.env.HOSTNAME || 'local'}-${Date.now()}`
@@ -413,7 +413,7 @@ server.listen(PORT, () => {
    agent.pause, agent.stop, tool.result
 
 ⚠️  TODO:
-   - 接入外部登录系统 (middleware/auth.ts)
+   ✅ 接入外部登录系统 (middleware/auth.ts)
    - 接入 Redis 做跨实例状态同步
    - 接入 PostgreSQL 做持久化存储
 `)

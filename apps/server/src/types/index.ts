@@ -9,6 +9,23 @@ export interface AgentLoopConfig {
   model: string
   systemPrompt: string
   baseURL?: string
+  /** Tier 1: 完整保留的最近轮数（一轮 = user + assistant） */
+  fullContextRounds?: number
+  /** Tier 2: 最大保留的压缩轮数 */
+  maxCompressedRounds?: number
+  /** LLM 压缩配置 */
+  compression?: {
+    model?: string
+    baseURL?: string
+    apiKey?: string
+    temperature?: number
+    timeout?: number
+    maxRetries?: number
+  }
+  /** @deprecated 使用 compression 替代 */
+  compressionStrategy?: 'summary' | 'keypoints' | 'hierarchical'
+  /** @deprecated 使用 compression 配置替代 */
+  maxTokens?: number
 }
 
 export interface LoopState {
