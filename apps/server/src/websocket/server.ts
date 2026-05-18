@@ -8,6 +8,7 @@ import type { Server } from 'http'
 import type { WSConnection, WSMessage, MessageType } from '../types/index.js'
 import { SessionManager } from '../services/session-manager.js'
 import { EventBus } from './event-bus.js'
+import { RateLimiter } from '../services/rate-limiter.js'
 
 export class WebSocketGateway {
   private wss: WebSocketServer
@@ -17,10 +18,13 @@ export class WebSocketGateway {
   private instanceId: string
   // 中央事件总线
   private eventBus: EventBus
+  // 限流器
+  private rateLimiter: RateLimiter
 
-  constructor(server: Server, sessionManager: SessionManager, instanceId: string) {
+  constructor(server: Server, sessionManager: SessionManager, instanceId: string, rateLimiter: RateLimiter) {
     this.sessionManager = sessionManager
     this.instanceId = instanceId
+    this.rateLimiter = rateLimiter
 
     // 初始化事件总线
     this.eventBus = new EventBus(sessionManager)
@@ -352,6 +356,37 @@ export class WebSocketGateway {
 
     if (!content) {
       throw new Error('Missing content')
+    }
+
+    // 1. 检查用户级HTTP限流
+    const userCheck = this.rateLimiter.checkHttpRequest(connection.userId)
+    if (!userCheck.allowed) {
+      this.sendToConnection(connection.id, {
+        type: 'stream.error' as import('../types/index.js').MessageType,
+        messageId: this.generateId(),
+        timestamp: Date.now(),
+        payload: {
+          error: `请求过于频繁，请 ${userCheck.retryAfter} 秒后再试`,
+          retryAfter: userCheck.retryAfter
+        }
+      })
+      return
+    }
+
+    // 2. 检查会话级消息限流
+    const targetSessionId = sessionId || 'new'
+    const sessionCheck = this.rateLimiter.checkSessionMessage(targetSessionId)
+    if (!sessionCheck.allowed) {
+      this.sendToConnection(connection.id, {
+        type: 'stream.error' as import('../types/index.js').MessageType,
+        messageId: this.generateId(),
+        timestamp: Date.now(),
+        payload: {
+          error: `该会话请求过于频繁，请 ${sessionCheck.retryAfter} 秒后再试`,
+          retryAfter: sessionCheck.retryAfter
+        }
+      })
+      return
     }
 
     const { agentLoop, session } = await this.sessionManager.getOrCreateSession(connection.userId, sessionId)

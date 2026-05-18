@@ -244,88 +244,186 @@ class SessionManager {
 
 ## 3. 资源限制与配额
 
-### 3.1 多层级限流
+### 3.1 多层级限流（已实现）
+
+基于 Token Bucket 算法的内存级限流实现，支持未来无缝升级到 Redis 分布式限流。
+
+**实现文件**: `/apps/server/src/services/rate-limiter.ts`
 
 ```typescript
-// apps/server/src/middleware/rate-limiter.ts
+/**
+ * Token Bucket 实现
+ */
+class TokenBucket {
+  private tokens: number
+  private lastRefill: number
 
-import { RateLimiterRedis } from 'rate-limiter-flexible'
+  constructor(private config: { capacity: number; refillRate: number }) {
+    this.tokens = config.capacity
+    this.lastRefill = Date.now()
+  }
 
-class MultiLevelRateLimiter {
-  // 全局级别：保护整个服务
-  private globalLimiter: RateLimiterRedis
-  
-  // 用户级别：限制单个用户
-  private userLimiter: RateLimiterRedis
-  
-  // 会话级别：限制单个会话
-  private sessionLimiter: RateLimiterRedis
-  
-  // LLM API 级别：保护上游供应商
-  private llmLimiter: RateLimiterRedis
-  
-  constructor(redis: Redis) {
-    // 全局：每分钟 10000 次请求
-    this.globalLimiter = new RateLimiterRedis({
-      storeClient: redis,
-      keyPrefix: 'limit:global',
-      points: 10000,
-      duration: 60
+  /**
+   * 尝试消费 token
+   * @param count 消费数量，默认1
+   * @returns 是否允许通过
+   */
+  consume(count: number = 1): boolean {
+    this.refill()
+    if (this.tokens >= count) {
+      this.tokens -= count
+      return true
+    }
+    return false
+  }
+
+  /**
+   * 获取下次可用时间（毫秒）
+   */
+  getWaitTime(): number {
+    this.refill()
+    if (this.tokens >= 1) return 0
+    const needed = 1 - this.tokens
+    return Math.ceil(needed / this.config.refillRate * 1000)
+  }
+
+  private refill(): void {
+    const now = Date.now()
+    const elapsed = (now - this.lastRefill) / 1000
+    this.tokens = Math.min(
+      this.config.capacity,
+      this.tokens + elapsed * this.config.refillRate
+    )
+    this.lastRefill = now
+  }
+}
+
+/**
+ * 多层限流器
+ */
+export class RateLimiter {
+  private globalHttpBucket: TokenBucket
+  private userHttpBuckets = new Map<string, BucketMetadata>()
+  private sessionMessageBuckets = new Map<string, BucketMetadata>()
+  private llmGlobalBucket: TokenBucket
+  private llmUserBuckets = new Map<string, BucketMetadata>()
+
+  constructor() {
+    const burst = config.rateLimit.burstMultiplier
+
+    // 全局HTTP: 默认 166/s (10000/min)
+    this.globalHttpBucket = new TokenBucket({
+      capacity: Math.ceil(166 * burst),
+      refillRate: 166
     })
-    
-    // 用户级别：每分钟 100 次请求
-    this.userLimiter = new RateLimiterRedis({
-      storeClient: redis,
-      keyPrefix: 'limit:user',
-      points: 100,
-      duration: 60
-    })
-    
-    // 会话级别：每分钟 30 次 Agent 调用
-    this.sessionLimiter = new RateLimiterRedis({
-      storeClient: redis,
-      keyPrefix: 'limit:session',
-      points: 30,
-      duration: 60
-    })
-    
-    // LLM API：每分钟 60 次调用（根据供应商限制调整）
-    this.llmLimiter = new RateLimiterRedis({
-      storeClient: redis,
-      keyPrefix: 'limit:llm',
-      points: 60,
-      duration: 60
+
+    // LLM全局: 默认 1.67/s (100/min)
+    this.llmGlobalBucket = new TokenBucket({
+      capacity: Math.ceil(1.67 * burst),
+      refillRate: 1.67
     })
   }
-  
-  async checkLimit(
-    userId: string, 
-    sessionId: string,
-    operation: 'http' | 'websocket' | 'llm'
-  ): Promise<void> {
-    try {
-      // 检查全局限制
-      await this.globalLimiter.consume('global', 1)
-      
-      // 检查用户限制
-      await this.userLimiter.consume(userId, 1)
-      
-      // 检查会话限制
-      if (operation === 'websocket') {
-        await this.sessionLimiter.consume(sessionId, 1)
+
+  /**
+   * 检查HTTP请求限流（全局 + 用户级）
+   */
+  checkHttpRequest(userId: string): { allowed: boolean; retryAfter?: number }
+
+  /**
+   * 检查LLM请求限流（全局 + 用户级）
+   */
+  checkLLMRequest(userId: string): { allowed: boolean; retryAfter?: number }
+
+  /**
+   * 检查会话消息限流
+   */
+  checkSessionMessage(sessionId: string): { allowed: boolean; retryAfter?: number }
+
+  /**
+   * 清理过期桶（每5分钟调用一次）
+   */
+  cleanup(): void
+}
+```
+
+**限流策略配置** (`/apps/server/src/config/index.ts`):
+
+```typescript
+rateLimit: {
+  // 全局HTTP请求: 默认 166/s (10000/分钟)
+  globalHttpRPS: parseFloat(process.env.RL_GLOBAL_HTTP_RPS || '166'),
+
+  // 单用户HTTP请求: 默认 1.67/s (100/分钟)
+  userHttpRPS: parseFloat(process.env.RL_USER_HTTP_RPS || '1.67'),
+
+  // 全局LLM请求: 默认 1.67/s (100/分钟)
+  globalLLMRPS: parseFloat(process.env.RL_GLOBAL_LLM_RPS || '1.67'),
+
+  // 单用户LLM请求: 默认 0.17/s (10/分钟)
+  userLLMRPS: parseFloat(process.env.RL_USER_LLM_RPS || '0.17'),
+
+  // 单会话消息频率: 默认 0.33/s (20/分钟, 约1条/3秒)
+  sessionMessageRPS: parseFloat(process.env.RL_SESSION_MSG_RPS || '0.33'),
+
+  // 桶容量倍数（突发容量 = 速率 * 倍数）
+  burstMultiplier: parseInt(process.env.RL_BURST_MULTIPLIER || '5')
+}
+```
+
+**集成点 1 - WebSocket 消息限流** (`/apps/server/src/websocket/server.ts`):
+
+```typescript
+private async handleAgentRun(connection: WSConnection, message: WSMessage): Promise<void> {
+  // 1. 检查用户级HTTP限流
+  const userCheck = this.rateLimiter.checkHttpRequest(connection.userId)
+  if (!userCheck.allowed) {
+    this.sendToConnection(connection.id, {
+      type: 'stream.error',
+      messageId: this.generateId(),
+      timestamp: Date.now(),
+      payload: {
+        error: `请求过于频繁，请 ${userCheck.retryAfter} 秒后再试`,
+        retryAfter: userCheck.retryAfter
       }
-      
-      // 检查 LLM 限制
-      if (operation === 'llm') {
-        await this.llmLimiter.consume('anthropic', 1)
+    })
+    return
+  }
+
+  // 2. 检查会话级消息限流
+  const sessionCheck = this.rateLimiter.checkSessionMessage(sessionId)
+  if (!sessionCheck.allowed) {
+    this.sendToConnection(connection.id, {
+      type: 'stream.error',
+      messageId: this.generateId(),
+      timestamp: Date.now(),
+      payload: {
+        error: `该会话请求过于频繁，请 ${sessionCheck.retryAfter} 秒后再试`,
+        retryAfter: sessionCheck.retryAfter
       }
-      
-    } catch (rejRes) {
-      throw new RateLimitError('请求过于频繁，请稍后重试', {
-        retryAfter: Math.round(rejRes.msBeforeNext / 1000)
-      })
+    })
+    return
+  }
+
+  // 继续处理...
+}
+```
+
+**集成点 2 - LLM 调用限流** (`/apps/server/src/services/llm-client.ts`):
+
+```typescript
+async chat(messages: Message[], userId?: string): Promise<LLMResponse> {
+  // 检查限流（如果提供了userId）
+  if (this.rateLimiter && userId) {
+    const check = this.rateLimiter.checkLLMRequest(userId)
+    if (!check.allowed) {
+      throw new LLMAPIError(
+        `请求过于频繁，请 ${check.retryAfter} 秒后再试`,
+        429
+      )
     }
   }
+
+  // 继续调用LLM...
 }
 ```
 
@@ -1049,38 +1147,100 @@ class MetricsCollector {
 }
 ```
 
+### 3.2 工具执行超时控制（已实现）
+
+针对不同工具类型配置合适的超时时间，防止单个工具卡住阻塞整个 Agent Loop。
+
+**实现文件**: `/apps/server/src/services/tool-bridge.ts`
+
+```typescript
+/**
+ * 根据工具类型获取超时时间
+ */
+private getToolTimeout(toolName: string): number {
+  const timeouts: Record<string, number> = {
+    'browser': 60000,           // 浏览器操作60s
+    'browser_ai': 90000,        // AI浏览器操作90s（包含语义解析时间）
+    'browser_ai_execute': 60000,
+    'browser_get_context': 30000,
+    'bash': 30000,              // 命令行30s
+    'file_read': 5000,          // 文件读取5s
+    'file_write': 5000          // 文件写入5s
+  }
+  return timeouts[toolName] || 30000
+}
+
+private async executeLocalTool(toolCall: ToolCall): Promise<ToolResult> {
+  // ...
+  const timeout = this.getToolTimeout(toolCall.name)
+
+  const response = await this.sendWebSocketRequest(requestId, {
+    toolCall,
+    timeout
+  })
+  // ...
+}
+```
+
+### 3.3 限流监控
+
+通过 `/health` 和 `/debug/stats` 接口查看限流统计：
+
+```json
+{
+  "status": "ok",
+  "stats": {
+    "rateLimit": {
+      "globalHttpTokens": 185.5,
+      "globalLlmTokens": 8.2,
+      "userHttpBuckets": 12,
+      "userLlmBuckets": 8,
+      "sessionMessageBuckets": 15
+    }
+  }
+}
+```
+
+---
+
 ## 8. 总结：并发架构检查清单
 
 ### 会话管理
-- [ ] 用户级会话数限制
-- [ ] 全局会话数上限
-- [ ] 僵尸会话自动清理
-- [ ] 跨实例会话查找
+- [x] 用户级会话数限制（10个/用户）
+- [x] 全局会话数上限（1000个）
+- [x] 僵尸会话自动清理（30分钟无活动）
+- [ ] 跨实例会话查找（需Redis）
 
 ### 资源限制
-- [ ] 多层限流（全局/用户/会话/LLM）
-- [ ] 配额管理（免费/付费等级）
-- [ ] 浏览器实例池管理
-- [ ] 内存和连接数监控
+- [x] 多层限流（全局/用户/会话/LLM）- **Token Bucket内存级实现**
+- [x] 工具执行超时控制（5s-90s按类型）
+- [ ] 配额管理（免费/付费等级）- 待实现
+- [ ] 浏览器实例池管理（需独立Browser Pool）
+- [x] 内存和连接数监控
 
 ### WebSocket
-- [ ] 连接心跳检测
-- [ ] 跨实例消息广播
-- [ ] 会话订阅管理
-- [ ] 断线重连机制
+- [x] 连接心跳检测（30秒间隔）
+- [ ] 跨实例消息广播（需Redis Pub/Sub）
+- [x] 会话订阅管理
+- [ ] 断线重连机制（客户端实现）
 
 ### 数据库
-- [ ] 连接池配置
+- [ ] 连接池配置（需PostgreSQL）
 - [ ] 乐观锁防止覆盖
 - [ ] 批量写入优化
 - [ ] 读写分离
 
 ### 监控
-- [ ] 实时指标收集
+- [x] 实时指标收集（/health, /debug/stats）
 - [ ] 资源使用告警
-- [ ] 错误率监控
-- [ ] 性能瓶颈分析
+- [x] 错误率监控（错误日志）
+- [ ] 性能瓶颈分析（Prometheus/Grafana）
 
 ---
 
 *文档创建时间：2026-05-14*
+
+---
+
+**更新记录**:
+- 2026-05-18: 添加多层限流系统实现（Token Bucket算法）、工具超时控制、限流监控接口

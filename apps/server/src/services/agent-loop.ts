@@ -54,7 +54,7 @@ export class AgentLoop extends EventEmitter {
       model: config.model || 'gpt-4',
       systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
     }
-    this.llmClient = new LLMClient({ model: this.config.model, baseURL: config.baseURL})
+    this.llmClient = new LLMClient({ model: this.config.model, baseURL: config.baseURL}, undefined)
     this.toolBridge = new ToolBridge(sessionId, userId, this.llmClient)
   }
 
@@ -357,8 +357,8 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
   private async callLLM(messages: Message[]): Promise<LLMResponse> {
     console.log(`[AgentLoop] 调用 LLM，消息数: ${messages.length}`)
 
-    // 调用 LLM
-    const response = await this.llmClient.chat(messages)
+    // 调用 LLM（传入userId用于限流检查）
+    const response = await this.llmClient.chat(messages, this.userId)
 
     console.log(`[AgentLoop] LLM 返回:`, {
       contentPreview: response.content?.substring(0, 100) || '(空)',

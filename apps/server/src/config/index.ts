@@ -40,5 +40,26 @@ export const config = {
     provider: (process.env.LLM_PROVIDER || 'openai') as 'openai' | 'ollama' | 'anthropic',
     // Ollama 默认地址: http://localhost:11434/v1
     isLocal: process.env.LLM_BASE_URL?.includes('localhost') || process.env.LLM_BASE_URL?.includes('127.0.0.1') || false
+  },
+
+  // 限流配置
+  rateLimit: {
+    // 全局HTTP请求: 默认 166/s (10000/分钟)
+    globalHttpRPS: parseFloat(process.env.RL_GLOBAL_HTTP_RPS || '166'),
+
+    // 单用户HTTP请求: 默认 1.67/s (100/分钟)
+    userHttpRPS: parseFloat(process.env.RL_USER_HTTP_RPS || '1.67'),
+
+    // 全局LLM请求: 默认 1.67/s (100/分钟)
+    globalLLMRPS: parseFloat(process.env.RL_GLOBAL_LLM_RPS || '1.67'),
+
+    // 单用户LLM请求: 默认 0.17/s (10/分钟)
+    userLLMRPS: parseFloat(process.env.RL_USER_LLM_RPS || '0.17'),
+
+    // 单会话消息频率: 默认 0.33/s (20/分钟, 约1条/3秒)
+    sessionMessageRPS: parseFloat(process.env.RL_SESSION_MSG_RPS || '0.33'),
+
+    // 桶容量倍数（突发容量 = 速率 * 倍数）
+    burstMultiplier: parseInt(process.env.RL_BURST_MULTIPLIER || '5')
   }
 }
