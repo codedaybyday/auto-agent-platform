@@ -60,8 +60,11 @@ AI 助手平台，支持多模型和 Agent Loop，基于 Monorepo + Electron + N
 ## 启动方式（目前建议本地启动）
 
 ```bash
+# pnpm 安装（node 环境）
+npm install -g pnpm
+pnpm i
 # 开发（同时启动客户端和服务端）
-pnpm dev
+pnpm dev # 不建议，会比较卡顿
 
 # 单独启动
 pnpm dev:client  # 仅客户端
