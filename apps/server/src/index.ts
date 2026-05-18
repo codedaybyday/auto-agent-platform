@@ -16,6 +16,7 @@ import { config } from './config/index.js'
 import { authMiddleware, AuthRequest } from './middleware/auth.js'
 import { SessionManager } from './services/session-manager.js'
 import { WebSocketGateway } from './websocket/server.js'
+import { rateLimiter } from './services/rate-limiter.js'
 // import { AgentLoop } from './services/agent-loop.js'
 
 // 生成实例 ID（用于多实例部署时区分）
@@ -36,8 +37,13 @@ const sessionManager = new SessionManager(INSTANCE_ID, {
   maxGlobalSessions: 1000
 })
 
-// 初始化 WebSocket
-const wsGateway = new WebSocketGateway(server, sessionManager, INSTANCE_ID)
+// 初始化 WebSocket（注入限流器）
+const wsGateway = new WebSocketGateway(server, sessionManager, INSTANCE_ID, rateLimiter)
+
+// 启动限流器清理任务（每5分钟清理过期桶）
+setInterval(() => {
+  rateLimiter.cleanup()
+}, 5 * 60 * 1000)
 
 // ==================== HTTP API 路由 ====================
 
@@ -49,7 +55,8 @@ app.get('/health', (_req: Request, res: Response) => {
     instanceId: INSTANCE_ID,
     stats: {
       sessions: sessionManager.getStats(),
-      websocket: wsGateway.getStats()
+      websocket: wsGateway.getStats(),
+      rateLimit: rateLimiter.getStats()
     }
   })
 })
@@ -342,7 +349,8 @@ app.get('/debug/stats', (req: Request, res: Response) => {
   res.json({
     instanceId: INSTANCE_ID,
     sessions: sessionManager.getStats(),
-    websocket: wsGateway.getStats()
+    websocket: wsGateway.getStats(),
+    rateLimit: rateLimiter.getStats()
   })
 })
 

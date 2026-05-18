@@ -225,6 +225,22 @@ export class ToolBridge {
   }
 
   /**
+   * 根据工具类型获取超时时间
+   */
+  private getToolTimeout(toolName: string): number {
+    const timeouts: Record<string, number> = {
+      'browser': 60000,           // 浏览器操作60s
+      'browser_ai': 90000,        // AI浏览器操作90s（包含语义解析时间）
+      'browser_ai_execute': 60000,
+      'browser_get_context': 30000,
+      'bash': 30000,              // 命令行30s
+      'file_read': 5000,          // 文件读取5s
+      'file_write': 5000          // 文件写入5s
+    }
+    return timeouts[toolName] || 30000
+  }
+
+  /**
    * 执行本地工具（通过 WebSocket 发送到客户端）
    */
   private async executeLocalTool(toolCall: ToolCall): Promise<ToolResult> {
@@ -241,11 +257,14 @@ export class ToolBridge {
     // 使用 toolCall.id 作为 requestId，以便客户端返回时能正确匹配
     const requestId = toolCall.id
 
+    // 根据工具类型获取超时时间
+    const timeout = this.getToolTimeout(toolCall.name)
+
     try {
       // 发送工具执行请求到客户端
       const response = await this.sendWebSocketRequest(requestId, {
         toolCall,
-        timeout: 60000 // 60秒超时
+        timeout
       })
 
       return {

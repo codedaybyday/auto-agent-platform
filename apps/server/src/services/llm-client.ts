@@ -4,6 +4,7 @@
  */
 
 import type { Message, ToolCall, LLMResponse } from '../types/index.js'
+import { RateLimiter } from './rate-limiter.js'
 
 export interface LLMConfig {
   model: string
@@ -50,8 +51,10 @@ export class LLMClient {
   private config: LLMConfig
   public readonly provider: LLMConfig['provider']
   public readonly isLocal: boolean
+  private rateLimiter?: RateLimiter
 
-  constructor(config: Partial<LLMConfig> = {}) {
+  constructor(config: Partial<LLMConfig> = {}, rateLimiter?: RateLimiter) {
+    this.rateLimiter = rateLimiter
     const baseURL = config.baseURL || process.env.LLM_BASE_URL || 'https://api.openai.com/v1'
     this.provider = config.provider || detectProvider(baseURL)
     this.isLocal = this.provider === 'ollama' || baseURL.includes('localhost') || baseURL.includes('127.0.0.1')
@@ -265,7 +268,18 @@ export class LLMClient {
   /**
    * 非流式对话
    */
-  async chat(messages: Message[]): Promise<LLMResponse> {
+  async chat(messages: Message[], userId?: string): Promise<LLMResponse> {
+    // 检查限流（如果提供了userId）
+    if (this.rateLimiter && userId) {
+      const check = this.rateLimiter.checkLLMRequest(userId)
+      if (!check.allowed) {
+        throw new LLMAPIError(
+          `请求过于频繁，请 ${check.retryAfter} 秒后再试`,
+          429
+        )
+      }
+    }
+
     const response = await fetch(`${this.config.baseURL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
