@@ -31,6 +31,23 @@ const server = createServer(app)
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 
+// 限流中间件
+function rateLimitMiddleware(req: AuthRequest, res: Response, next: any) {
+  const userId = req.user?.id || req.body?.userId || 'anonymous'
+
+  const check = rateLimiter.checkHttpRequest(userId)
+  if (!check.allowed) {
+    res.status(429).json({
+      success: false,
+      error: `请求过于频繁，请 ${check.retryAfter} 秒后再试`,
+      retryAfter: check.retryAfter
+    })
+    return
+  }
+
+  next()
+}
+
 // 初始化服务
 const sessionManager = new SessionManager(INSTANCE_ID, {
   maxSessionsPerUser: 10,
@@ -61,8 +78,8 @@ app.get('/health', (_req: Request, res: Response) => {
   })
 })
 
-// 创建会话（需要认证）
-app.post('/api/sessions', authMiddleware, async (req: AuthRequest, res: Response) => {
+// 创建会话（需要认证 + 限流）
+app.post('/api/sessions', authMiddleware, rateLimitMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { title } = req.body
     const userId = req.user!.id
@@ -175,8 +192,8 @@ app.delete('/api/sessions/:sessionId', authMiddleware, async (req: AuthRequest, 
   }
 })
 
-// 发送消息（非流式，需要认证）
-app.post('/api/sessions/:sessionId/chat', authMiddleware, async (req: AuthRequest, res: Response) => {
+// 发送消息（非流式，需要认证 + 限流）
+app.post('/api/sessions/:sessionId/chat', authMiddleware, rateLimitMiddleware, async (req: AuthRequest, res: Response) => {
   try {
     const { sessionId } = req.params
     const { content } = req.body
