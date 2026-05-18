@@ -18,7 +18,7 @@ AI 助手平台，支持多模型和 Agent Loop，基于 Monorepo + Electron + N
 ### 服务端能力
 - **多层限流**: Token Bucket 算法，支持全局/用户/会话三级限流（HTTP/LLM/消息）
 - **安全策略**: Bash 危险命令拦截、Browser URL 白名单、SSRF 防护
-- **资源管理**: 会话级浏览器 Tab 隔离、进程自动清理、空闲检测
+- **资源管理**: 会话级浏览器 Tab 隔离、进程自动清理、心跳检测
 
 ### 用户体验
 - **Markdown 渲染**: 支持代码高亮、表格、列表等富文本展示
@@ -38,8 +38,8 @@ AI 助手平台，支持多模型和 Agent Loop，基于 Monorepo + Electron + N
 ```
 ┌─────────────────┐     WebSocket      ┌─────────────────┐
 │   Electron      │ ◄────────────────► │   Node.js       │
-│   (Renderer)    │                    │   (Agent Loop)  │
-└────────┬────────┘                    └────────┬────────┘
+│   (Renderer)    │     Http（请求模型） │   (Agent Loop)  │
+└────────┬────────┘ -────────────────► └────────┬────────┘
          │                                      │
          │ IPC                                  │ LLM API
          ▼                                      ▼
@@ -57,7 +57,7 @@ AI 助手平台，支持多模型和 Agent Loop，基于 Monorepo + Electron + N
 | UI ↔ Server | WebSocket | 消息流、Agent Loop |
 | Main ↔ Browser | CDP (port 9222) | 浏览器控制 |
 
-## 启动方式
+## 启动方式（目前建议本地启动）
 
 ```bash
 # 开发（同时启动客户端和服务端）
@@ -73,9 +73,9 @@ pnpm build
 
 ## 配置模型
 
-复制 `.env.example` 为 `.env`，配置 API Key。支持两种协议：
+复制 `apps/server/.env.example` 为 `apps/server/.env`，配置 API Key。支持两种协议(建议使用 OpenAI Chat Completions API)：
 
-- **Anthropic Messages API**: Claude 系列
+- **Anthropic Messages API**: Claude 系列（未完成）
 - **OpenAI Chat Completions API**: 千问、DeepSeek、OpenAI 等
 
 ### 快速配置示例
