@@ -749,6 +749,7 @@ function bindIpcEvents() {
     try {
       const result = await ssoClient.login();
 
+      console.log('sso login result: ', result);
       if (result && result.access_token) {
         return { success: true, error: null };
       } else {

@@ -50,8 +50,10 @@ export interface AgentAPI {
   onSessionsUpdated: (callback: (sessions: Session[]) => void) => () => void
   /** 监听会话切换 */
   onSessionSwitched: (callback: (sessionId: string) => void) => () => void
-  /** SSO登录 */
+  /** SSO 登录 */
   login: () => Promise<{ success: boolean; error?: string }>
+  /** SSO 查询当前登录用户 */
+  whoami: () => Promise<{ success: boolean; error?: string, data: any }>
 }
 
 declare global {

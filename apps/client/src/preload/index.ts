@@ -53,6 +53,7 @@ export interface AgentAPI {
   /** 监听会话切换 */
   onSessionSwitched: (callback: (sessionId: string) => void) => () => void
   login: () => Promise<{ success: boolean; error?: string }>
+  whoami: () => Promise<{ success: boolean; error?: string, data: any }>
 }
 
 /**
@@ -127,7 +128,8 @@ const agentAPI: AgentAPI = {
     return () => ipcRenderer.removeListener('agent:session_switched', handler)
   },
   // sso
-  login: () => ipcRenderer.invoke('sso:login')
+  login: () => ipcRenderer.invoke('sso:login'),
+  whoami: () => ipcRenderer.invoke('sso:whoami')
 }
 
 const api = {
