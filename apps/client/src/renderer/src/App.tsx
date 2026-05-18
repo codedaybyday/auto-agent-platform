@@ -143,6 +143,15 @@ function App(): JSX.Element {
         console.log('[App] 添加消息到当前会话:', activeSessionId, '消息数:', newMessages.length)
         return newMessages
       })
+
+      // 更新当前会话的消息计数
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === activeSessionId
+            ? { ...s, messageCount: s.messageCount + 1, updatedAt: Date.now() }
+            : s
+        )
+      )
     })
 
     const unsubscribeProcessing = window.api.agent.onProcessing((data: { processing: boolean; sessionId?: string }) => {
