@@ -3,9 +3,9 @@
  * 工具代理层：判断工具在哪里执行并路由到正确的执行器
  */
 
-import { ToolType, type ToolCall, type ToolResult, type WSConnection } from '../types/index.js'
-import { BrowserAIParser, type ParsedBrowserAction } from './browser-ai-parser.js'
-import { LLMClient } from './llm-client.js'
+import { ToolType, type ToolCall, type ToolResult, type WSConnection } from '../../types/index.js'
+import { BrowserAIParser, type ParsedBrowserAction } from '../llm/parser.js'
+import { LLMClient } from '../llm/client.js'
 
 interface ToolExecuteRequest {
   toolCall: ToolCall

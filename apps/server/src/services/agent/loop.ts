@@ -13,8 +13,9 @@ import type {
   LLMResponse,
   AgentError
 } from '../types/index.js'
-import { ToolBridge } from './tool-bridge.js'
-import { LLMClient, LLMAPIError } from './llm-client.js'
+import { ToolBridge } from './bridge.js'
+import { LLMClient, LLMAPIError } from '../llm/client.js'
+import { ShortTermMemory } from '../memory/short-term.js'
 
 export interface AgentLoopEvents {
   'run_start': { input: string; timestamp: number }
@@ -34,6 +35,7 @@ export class AgentLoop extends EventEmitter {
   private llmClient: LLMClient
   private userId: string
   private wsClient: any = null
+  private shortTermMemory: ShortTermMemory
 
   constructor(
     sessionId: string,
@@ -56,6 +58,21 @@ export class AgentLoop extends EventEmitter {
     }
     this.llmClient = new LLMClient({ model: this.config.model, baseURL: config.baseURL}, undefined)
     this.toolBridge = new ToolBridge(sessionId, userId, this.llmClient)
+
+    // 初始化短期记忆（Tier 1 + Tier 2）
+    this.shortTermMemory = new ShortTermMemory({
+      fullContextRounds: config.fullContextRounds ?? 5,
+      maxCompressedRounds: config.maxCompressedRounds ?? 20,
+      compression: config.compression ?? {
+        model: process.env.COMPRESSION_MODEL ?? process.env.LLM_MODEL ?? 'gpt-4o-mini',
+        baseURL: process.env.COMPRESSION_BASE_URL ?? process.env.LLM_BASE_URL ?? config.baseURL,
+        apiKey: process.env.COMPRESSION_API_KEY ?? process.env.LLM_API_KEY,
+        temperature: 0.3,
+        timeout: 10000,
+        maxRetries: 2
+      },
+      debug: process.env.DEBUG_MEMORY === 'true'
+    })
   }
 
   /**
@@ -72,12 +89,13 @@ export class AgentLoop extends EventEmitter {
     // 初始化
     this.state.status = 'running'
     this.state.iteration = 0
-    this.addMessage({
+    const userMessage: Message = {
       id: this.generateId(),
       role: 'user',
       content: userInput,
       timestamp: Date.now()
-    })
+    }
+    this.addMessage(userMessage)
 
     this.emit('run_start', { input: userInput, timestamp: Date.now() })
 
@@ -298,17 +316,25 @@ export class AgentLoop extends EventEmitter {
   }
 
   /**
-   * 获取历史消息
+   * 获取历史消息（用于外部访问，如 API）
    */
   getMessages(): Message[] {
-    return [...this.state.messages]
+    return this.shortTermMemory.getAllMessages()
   }
 
   /**
    * 清除历史消息
    */
   clearMessages(): void {
+    this.shortTermMemory.clear()
     this.state.messages = []
+  }
+
+  /**
+   * 获取短期记忆统计信息
+   */
+  getMemoryStats(): ReturnType<ShortTermMemory['getStats']> {
+    return this.shortTermMemory.getStats()
   }
 
   /**
@@ -345,13 +371,8 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
   }
 
   private buildContext(): Message[] {
-    const systemMessage: Message = {
-      id: 'system',
-      role: 'system',
-      content: this.config.systemPrompt,
-      timestamp: Date.now()
-    }
-    return [systemMessage, ...this.state.messages]
+    // 使用短期记忆构建上下文（包含 Tier 1 完整消息 + Tier 2 压缩摘要）
+    return this.shortTermMemory.getContextMessages(this.config.systemPrompt)
   }
 
   private async callLLM(messages: Message[]): Promise<LLMResponse> {
@@ -389,11 +410,23 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
   }
 
   private addMessage(message: Message): void {
+    // 添加到短期记忆（包含压缩逻辑）
+    this.shortTermMemory.addMessage(message)
+    // 同步到 state 保持兼容性
     this.state.messages.push(message)
+
+    // 打印短期记忆统计
+    const stats = this.shortTermMemory.getStats()
+    console.log(`[AgentLoop] 短期记忆状态:`, {
+      totalMessages: stats.totalMessages,
+      currentRound: stats.currentRound,
+      compressedCount: stats.compressedCount,
+      estimatedTokens: stats.estimatedTokens
+    })
   }
 
   private addToolResult(toolCall: ToolCall, result: ToolResult): void {
-    this.state.messages.push({
+    const toolMessage: Message = {
       id: this.generateId(),
       role: 'tool',
       content: result.success
@@ -401,7 +434,11 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
         : `Error: ${result.error}`,
       toolResults: [result],
       timestamp: Date.now()
-    })
+    }
+    // 添加到短期记忆
+    this.shortTermMemory.addMessage(toolMessage)
+    // 同步到 state
+    this.state.messages.push(toolMessage)
   }
 
   private generateId(): string {

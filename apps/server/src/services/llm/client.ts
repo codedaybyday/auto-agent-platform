@@ -3,8 +3,8 @@
  * 支持 OpenAI API、Ollama 本地部署（OpenAI 兼容格式）
  */
 
-import type { Message, ToolCall, LLMResponse } from '../types/index.js'
-import { RateLimiter } from './rate-limiter.js'
+import type { Message, ToolCall, LLMResponse } from '../../types/index.js'
+import { RateLimiter } from '../rate-limiter.js'
 
 export interface LLMConfig {
   model: string

@@ -3,9 +3,9 @@
  * 管理多用户会话生命周期
  */
 
-import { AgentLoop } from './agent-loop.js'
-import { config } from '../config/index.js'
-import type { Session, SessionContext, Message } from '../types/index.js'
+import { AgentLoop } from './loop.js'
+import { config } from '../../config/index.js'
+import type { Session, SessionContext, Message } from '../../types/index.js'
 
 interface SessionConfig {
   maxSessionsPerUser: number
