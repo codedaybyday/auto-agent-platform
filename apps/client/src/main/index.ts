@@ -286,10 +286,46 @@ async function executeToolAndReport(message: any): Promise<void> {
 
       case 'browser_ai_execute': {
         // 服务端已解析的浏览器动作，直接执行
-        const { action } = toolCall.arguments as { action: any }
+        const { action, actionIndex } = toolCall.arguments as { action: any; actionIndex?: number }
         console.log(`[Main] Executing browser_ai_execute for session ${sessionId}:`, action)
+
+        // 获取执行前的页面状态（用于检测变化）
+        const pageBefore = await browserAI.getCurrentUrl(sessionId)
+        const domHashBefore = await browserAI.getDOMHash(sessionId)
+
+        // 执行动作
         const actionResult = await browserAI.executeBrowserAction(sessionId, action)
-        result = actionResult.result
+
+        // 检测页面变化
+        const pageAfter = await browserAI.getCurrentUrl(sessionId)
+        const domHashAfter = await browserAI.getDOMHash(sessionId)
+
+        const navigationOccurred = pageBefore !== pageAfter
+        const domChanged = domHashBefore !== domHashAfter
+
+        // 如果页面发生变化，刷新缓存以确保下次获取正确的元素
+        if (domChanged || navigationOccurred) {
+          console.log(`[Main] Page changed (domChanged=${domChanged}, navigationOccurred=${navigationOccurred}), refreshing context...`)
+          await browserAI.refreshPageContext(sessionId)
+        }
+
+        // 返回结果（包含变化检测信息和执行状态）
+        result = {
+          result: actionResult.result,
+          success: actionResult.success,
+          navigationOccurred,
+          domChanged,
+          urlChanged: pageBefore !== pageAfter,
+          actionIndex,
+          actionType: action.type
+        }
+        break
+      }
+
+      case 'browser_get_current_url': {
+        // 获取当前 URL
+        const url = await browserAI.getCurrentUrl(sessionId)
+        result = { url }
         break
       }
 
@@ -299,12 +335,18 @@ async function executeToolAndReport(message: any): Promise<void> {
 
         if (ref !== undefined) {
           const actionResult = await browserAI.clickByIndex(sessionId, ref)
-          result = actionResult.result
+          result = {
+            result: actionResult.result,
+            success: actionResult.success
+          }
         } else if (instruction) {
           // 简单指令用硬编码规则解析（作为降级方案）
           const action = parseBrowserInstruction(instruction)
           const actionResult = await browserAI.executeBrowserAction(sessionId, action)
-          result = actionResult.result
+          result = {
+            result: actionResult.result,
+            success: actionResult.success
+          }
         } else {
           throw new Error('browser_ai tool requires either "instruction" or "ref" parameter')
         }
@@ -316,6 +358,8 @@ async function executeToolAndReport(message: any): Promise<void> {
 
     // 返回结果给服务端
     // 使用 toolCall.id 作为 messageId，以便服务端匹配 pending 请求
+    // 从 result 中提取 success 状态（如果存在），否则默认为 true
+    const success = result && typeof result.success === 'boolean' ? result.success : true
     ws?.send(JSON.stringify({
       type: 'tool.result',
       messageId: toolCall.id,
@@ -323,7 +367,7 @@ async function executeToolAndReport(message: any): Promise<void> {
       sessionId: sessionId,
       payload: {
         toolCallId: toolCall.id,
-        success: true,
+        success,
         data: result,
         executionTime: 0
       }

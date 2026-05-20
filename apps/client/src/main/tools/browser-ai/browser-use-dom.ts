@@ -60,9 +60,10 @@ export class BrowserUseDOMService {
 
       console.log(`[BrowserUseDOM] Extracted ${elements.length} interactive elements`)
 
-      // Debug: Log first few elements
-      elements.slice(0, 5).forEach((el, i) => {
-        console.log(`[BrowserUseDOM]   [${i}] ${el.tag} name="${el.name?.substring(0, 20)}" placeholder="${el.placeholder?.substring(0, 20)}"`)
+      // Debug: Log all elements to diagnose modal detection issues
+      console.log(`[BrowserUseDOM] All ${elements.length} elements:`)
+      elements.forEach((el, i) => {
+        console.log(`[BrowserUseDOM]   [${i}] ${el.tag} name="${el.name?.substring(0, 30)}" role="${el.role}" placeholder="${el.placeholder?.substring(0, 20)}" ariaLabel="${el.ariaLabel?.substring(0, 30)}" id="${el.id}" type="${el.type}"`)
       })
 
       // 4. 计算 hash
@@ -114,6 +115,10 @@ export class BrowserUseDOMService {
     const doc = documents[0]
     const nodes = doc.nodes || {}
 
+    // CDP uses string table - indices in arrays point to snapshot.strings
+    const strings = snapshot.strings || []
+    console.log(`[BrowserUseDOM] String table has ${strings.length} entries`)
+
     // Extract node info from arrays
     const nodeTypes = nodes.nodeType || []
     const nodeNames = nodes.nodeName || []
@@ -134,15 +139,22 @@ export class BrowserUseDOMService {
       if (nodeTypes[i] !== 1) continue
       elementNodeCount++
 
-      // nodeName can be string or array [namespace, name]
+      // nodeName can be string, number (string table index), or array [namespace, name]
       const rawName = nodeNames[i]
       let tagName = ''
-      if (typeof rawName === 'string') {
+      if (typeof rawName === 'number' && rawName >= 0 && rawName < strings.length) {
+        // String table index
+        tagName = strings[rawName]
+      } else if (typeof rawName === 'string') {
         tagName = rawName
       } else if (Array.isArray(rawName) && rawName.length > 0) {
         // If it's an array, use the last element (local name)
         const lastElement = rawName[rawName.length - 1]
-        tagName = typeof lastElement === 'string' ? lastElement : String(lastElement)
+        if (typeof lastElement === 'number' && lastElement >= 0 && lastElement < strings.length) {
+          tagName = strings[lastElement]
+        } else {
+          tagName = typeof lastElement === 'string' ? lastElement : String(lastElement)
+        }
       } else {
         tagName = String(rawName || '')
       }
@@ -151,7 +163,15 @@ export class BrowserUseDOMService {
       const backendNodeId = backendIds[i]
 
       // Parse attributes array into key-value pairs first
-      const attrMap = this.parseAttributes(attributes[i] || [])
+      // CDP returns attribute names as string table indices
+      const attrArray = attributes[i] || []
+      const attrMap = this.parseAttributes(attrArray, strings)
+
+      // Debug: 打印弹窗元素的原始属性 (索引 45-54)
+      if (i >= 45 && i <= 55) {
+        console.log(`[BrowserUseDOM] Debug Node ${i} <${tag}> attrs:`, Array.from(attrMap.entries()))
+        console.log(`[BrowserUseDOM] Debug Node ${i} AX name:`, axNodeMap.get(backendNodeId)?.name?.value)
+      }
 
       // Check if interactive
       const isInteractive = this.isInteractive(tag, attrMap, axNodeMap, backendNodeId)
@@ -206,29 +226,44 @@ export class BrowserUseDOMService {
 
   /**
    * Parse attributes array from CDP format
-   * CDP returns attributes as [name1, value1, name2, value2, ...]
+   * CDP returns attributes as [nameIndex1, valueIndex1, nameIndex2, valueIndex2, ...]
+   * where indices point to snapshot.strings array
    * Name can be string or array [namespace, localName]
    */
-  private parseAttributes(attrArray: any[]): Map<string, string> {
+  private parseAttributes(attrArray: any[], strings: string[]): Map<string, string> {
     const map = new Map<string, string>()
     for (let i = 0; i < attrArray.length; i += 2) {
       const rawName = attrArray[i]
-      const value = attrArray[i + 1]
+      const rawValue = attrArray[i + 1]
 
-      // Handle name that could be string or array
+      // Resolve string table index to actual string
       let name = ''
-      if (typeof rawName === 'string') {
+      if (typeof rawName === 'number' && rawName >= 0 && rawName < strings.length) {
+        name = strings[rawName]
+      } else if (typeof rawName === 'string') {
         name = rawName
       } else if (Array.isArray(rawName) && rawName.length > 0) {
-        // Use the last element (local name)
-        const lastElement = rawName[rawName.length - 1]
-        name = typeof lastElement === 'string' ? lastElement : String(lastElement)
+        // Handle array of indices
+        const lastIdx = rawName[rawName.length - 1]
+        if (typeof lastIdx === 'number' && lastIdx >= 0 && lastIdx < strings.length) {
+          name = strings[lastIdx]
+        } else {
+          name = String(lastIdx || '')
+        }
       } else {
         name = String(rawName || '')
       }
 
+      // Resolve value from string table if it's an index
+      let value = ''
+      if (typeof rawValue === 'number' && rawValue >= 0 && rawValue < strings.length) {
+        value = strings[rawValue]
+      } else {
+        value = String(rawValue || '')
+      }
+
       if (name) {
-        map.set(name.toLowerCase(), value || '')
+        map.set(name.toLowerCase(), value)
       }
     }
     return map

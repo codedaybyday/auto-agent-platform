@@ -692,9 +692,9 @@ export class BrowserAI {
 
     console.log(`[BrowserAI] Page context: ${elements.length} elements at ${context.url}`)
 
-    // 打印前 10 个元素用于调试
-    elements.slice(0, 10).forEach(el => {
-      console.log(`[BrowserAI]   ref=${el.ref}, tag=${el.tag}, role=${el.role}, name="${el.name?.substring(0, 20)}"`)
+    // 打印所有元素用于调试（特别是检测弹窗元素）
+    elements.forEach(el => {
+      console.log(`[BrowserAI]   ref=${el.ref}, tag=${el.tag}, role=${el.role}, name="${el.name?.substring(0, 30)}"`)
     })
 
     return {
@@ -736,6 +736,57 @@ export class BrowserAI {
       return page.url()
     } catch {
       return null
+    }
+  }
+
+  /**
+   * 获取 DOM 哈希（用于检测页面变化）
+   * 使用页面可交互元素的数量和关键属性生成简单哈希
+   */
+  async getDOMHash(sessionId: string): Promise<string> {
+    try {
+      const page = await this.getPage(sessionId)
+
+      // 使用 page.evaluate 获取页面特征
+      const domFeatures = await page.evaluate(() => {
+        const interactiveElements = document.querySelectorAll(
+          'button, input, textarea, select, a, [role="button"], [role="link"], [onclick]'
+        )
+
+        // 收集关键特征
+        const features = {
+          url: window.location.href,
+          elementCount: interactiveElements.length,
+          // 前 10 个元素的标签和文本特征
+          elementSignatures: Array.from(interactiveElements)
+            .slice(0, 10)
+            .map(el => ({
+              tag: el.tagName,
+              id: el.id,
+              text: el.textContent?.slice(0, 20) || ''
+            })),
+          // 是否有弹窗
+          hasModal: !!document.querySelector('[role="dialog"], [role="alertdialog"], .modal'),
+          // 页面滚动位置
+          scrollY: window.scrollY
+        }
+
+        return features
+      })
+
+      // 生成简单哈希
+      const hashInput = JSON.stringify(domFeatures)
+      let hash = 0
+      for (let i = 0; i < hashInput.length; i++) {
+        const char = hashInput.charCodeAt(i)
+        hash = ((hash << 5) - hash) + char
+        hash = hash & hash
+      }
+
+      return hash.toString(16)
+    } catch (error) {
+      console.error('[BrowserAI] Failed to get DOM hash:', error)
+      return Date.now().toString(16) // 失败时返回时间戳，确保不缓存
     }
   }
 

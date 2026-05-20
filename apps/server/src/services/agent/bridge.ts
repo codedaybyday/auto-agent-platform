@@ -4,7 +4,7 @@
  */
 
 import { ToolType, type ToolCall, type ToolResult, type WSConnection } from '../../types/index.js'
-import { BrowserAIParser, type ParsedBrowserAction } from '../llm/parser.js'
+import { BrowserAIParser, type ParsedBrowserAction, type SingleBrowserAction, type BatchBrowserAction } from '../llm/parser.js'
 import { LLMClient } from '../llm/client.js'
 
 interface ToolExecuteRequest {
@@ -26,6 +26,25 @@ interface ToolExecuteResponse {
 interface BrowserAIExecuteRequest {
   action: ParsedBrowserAction
   timeout: number
+}
+
+interface BatchActionResult {
+  actionIndex: number
+  action: SingleBrowserAction
+  success: boolean
+  result?: string
+  error?: string
+  domChanged?: boolean
+  navigationOccurred?: boolean
+}
+
+interface BatchExecutionSummary {
+  totalActions: number
+  completedActions: number
+  failedActions: number
+  stoppedReason: 'completed' | 'dom_changed' | 'navigation' | 'popup' | 'error' | 'max_actions'
+  results: BatchActionResult[]
+  finalUrl?: string
 }
 
 export class ToolBridge {
@@ -99,15 +118,13 @@ export class ToolBridge {
 
   /**
    * 执行 browser_ai 工具
-   * 1. 先获取页面上下文（DOM 信息）
-   * 2. 服务端使用 LLM 基于上下文解析指令
-   * 3. 将解析后的结构化动作发送到客户端执行
+   * 支持批量动作规划与执行，减少 DOM 获取和 LLM 调用次数
    */
   private async executeBrowserAI(toolCall: ToolCall): Promise<ToolResult> {
     const startTime = Date.now()
-    const { instruction, ref } = toolCall.arguments as { instruction?: string; ref?: string }
+    const { instruction, ref, useBatch = true } = toolCall.arguments as { instruction?: string; ref?: string; useBatch?: boolean }
 
-    // 如果有 ref，直接透传给客户端执行
+    // 如果有 ref，直接透传给客户端执行（简单场景）
     if (ref) {
       return this.executeLocalTool({
         ...toolCall,
@@ -136,28 +153,238 @@ export class ToolBridge {
       }
     }
 
-    // 步骤 1: 获取页面上下文
+    // 步骤 1: 获取页面上下文（只获取一次）
     console.log(`[ToolBridge] Getting page context for: ${instruction}`)
     const contextResult = await this.getPageContext()
 
-    console.log(`[ToolBridge] contextResult.success=${contextResult.success}, has context=${!!contextResult.context}`)
-    if (contextResult.context) {
-      console.log(`[ToolBridge] context.url=${contextResult.context.url}`)
-      console.log(`[ToolBridge] context.elements count=${contextResult.context.elements?.length || 0}`)
-      console.log(`[ToolBridge] First 5 elements:`, contextResult.context.elements?.slice(0, 5))
-    }
-
     if (!contextResult.success) {
-      // 如果获取上下文失败，尝试无上下文解析（导航类指令）
       console.log(`[ToolBridge] No page context, trying navigation parse`)
+      return this.executeSimpleBrowserAI(toolCall, instruction, startTime)
     }
 
-    // 步骤 2: 使用 LLM 基于上下文解析指令
-    console.log(`[ToolBridge] Parsing browser_ai instruction: ${instruction}`)
-    const parseResult = await this.browserAIParser.parseInstruction(
+    console.log(`[ToolBridge] Context loaded: ${contextResult.context?.elements?.length || 0} elements`)
+
+    // 步骤 2: 使用批量规划（如果启用）
+    if (useBatch) {
+      console.log(`[ToolBridge] Using batch planning for: ${instruction}`)
+      const batchResult = await this.executeBatchBrowserAI(
+        toolCall,
+        instruction,
+        contextResult.context!,
+        startTime
+      )
+      return batchResult
+    }
+
+    // 降级为单动作执行
+    return this.executeSimpleBrowserAI(toolCall, instruction, startTime, contextResult.context)
+  }
+
+  /**
+   * 批量执行 browser_ai 动作
+   * 执行一次批量计划，当因弹窗/DOM变化停止时，返回给LLM重新决策
+   * 不自动继续，让Agent Loop决定下一步
+   */
+  private async executeBatchBrowserAI(
+    toolCall: ToolCall,
+    instruction: string,
+    context: any,
+    startTime: number
+  ): Promise<ToolResult> {
+    // 批量规划动作
+    const planResult = await this.browserAIParser!.planBatchActions(
       instruction,
-      contextResult.context
+      context,
+      5
     )
+
+    if (!planResult.success || !planResult.batchAction) {
+      // 降级为单动作执行
+      if (planResult.action) {
+        const singleResult = await this.executeLocalTool({
+          ...toolCall,
+          name: 'browser_ai_execute',
+          arguments: { action: planResult.action }
+        })
+        return {
+          toolCallId: toolCall.id,
+          success: singleResult.success,
+          data: {
+            batchExecution: true,
+            iterations: 1,
+            totalActions: 1,
+            successfulActions: singleResult.success ? 1 : 0,
+            failedActions: singleResult.success ? 0 : 1,
+            lastStoppedReason: singleResult.success ? 'completed' : 'error',
+            results: [{
+              actionIndex: 0,
+              action: planResult.action as SingleBrowserAction,
+              success: singleResult.success,
+              result: singleResult.data?.result,
+              error: singleResult.error
+            }],
+            completed: singleResult.success
+          },
+          error: singleResult.error,
+          executionTime: Date.now() - startTime
+        }
+      }
+
+      return {
+        toolCallId: toolCall.id,
+        success: false,
+        error: planResult.error || 'Failed to plan actions',
+        executionTime: Date.now() - startTime
+      }
+    }
+
+    // 执行批量动作
+    const batchResult = await this.executeBatchActions(
+      toolCall,
+      planResult.batchAction,
+      context.url
+    )
+
+    const actionTypes = batchResult.results.map(r => r.action.type).join(', ')
+    console.log(`[Batch] 执行 [${actionTypes}] → ${batchResult.stoppedReason}`)
+
+    const successCount = batchResult.results.filter(r => r.success).length
+    const executionTime = Date.now() - startTime
+
+    // browser-use 风格：只返回执行结果，不预设下一步该做什么
+    // 让 LLM 基于新的 DOM 状态自己决策
+    return {
+      toolCallId: toolCall.id,
+      success: successCount === batchResult.results.length && batchResult.results.length > 0,
+      data: {
+        batchExecution: true,
+        totalActions: batchResult.results.length,
+        successfulActions: successCount,
+        failedActions: batchResult.results.length - successCount,
+        stoppedReason: batchResult.stoppedReason,
+        results: batchResult.results
+      },
+      error: successCount < batchResult.results.length
+        ? `${batchResult.results.length - successCount} actions failed`
+        : undefined,
+      executionTime
+    }
+  }
+
+  /**
+   * 判断任务是否完成
+   * 基于已执行的动作和当前页面状态简单判断
+   */
+  private isTaskCompleted(task: string, results: BatchActionResult[]): boolean {
+    // 简单启发式：如果有动作成功执行，且最后没有错误，认为可能完成
+    // 实际应由 LLM 在下一步判断
+    const hasSuccess = results.some(r => r.success)
+    const lastFailed = results.length > 0 && !results[results.length - 1].success
+
+    // 如果最后一个动作失败，可能需要重试
+    if (lastFailed) return false
+
+    // 否则让 LLM 基于新的 DOM 状态决定
+    return false
+  }
+
+  /**
+   * 执行批量动作
+   */
+  private async executeBatchActions(
+    toolCall: ToolCall,
+    batchAction: BatchBrowserAction,
+    initialUrl: string
+  ): Promise<BatchExecutionSummary> {
+    const results: BatchActionResult[] = []
+    const actions = batchAction.actions.slice(0, batchAction.stopConditions?.maxActions || 5)
+
+    let stoppedReason: BatchExecutionSummary['stoppedReason'] = 'completed'
+
+    for (let i = 0; i < actions.length; i++) {
+      const action = actions[i]
+      console.log(`[ToolBridge] Executing action ${i + 1}/${actions.length}: ${action.type}`)
+
+      // 执行单个动作
+      const actionToolCall: ToolCall = {
+        ...toolCall,
+        id: `${toolCall.id}-${i}`,
+        name: 'browser_ai_execute',
+        arguments: { action, actionIndex: i }
+      }
+
+      const result = await this.executeLocalTool(actionToolCall)
+
+      // 检查执行结果
+      const actionResult: BatchActionResult = {
+        actionIndex: i,
+        action,
+        success: result.success,
+        result: result.data?.result || result.data,
+        error: result.error
+      }
+
+      // 检查是否触发停止条件
+      if (result.data?.domChanged && batchAction.stopConditions?.onDOMChange) {
+        actionResult.domChanged = true
+        stoppedReason = 'dom_changed'
+        results.push(actionResult)
+        console.log(`[ToolBridge] Stopping batch: DOM changed`)
+        break
+      }
+
+      if (result.data?.navigationOccurred && batchAction.stopConditions?.onNavigation) {
+        actionResult.navigationOccurred = true
+        stoppedReason = 'navigation'
+        results.push(actionResult)
+        console.log(`[ToolBridge] Stopping batch: Navigation occurred`)
+        break
+      }
+
+      if (result.data?.hasPopup && batchAction.stopConditions?.onPopup) {
+        stoppedReason = 'popup'
+        results.push(actionResult)
+        console.log(`[ToolBridge] Stopping batch: Popup detected`)
+        break
+      }
+
+      results.push(actionResult)
+
+      // 如果动作失败，停止执行
+      if (!result.success) {
+        stoppedReason = 'error'
+        console.log(`[ToolBridge] Stopping batch: Action failed`)
+        break
+      }
+    }
+
+    // 获取最终 URL
+    const finalUrlResult = await this.executeLocalTool({
+      id: this.generateId(),
+      name: 'browser_get_current_url',
+      arguments: {}
+    })
+
+    return {
+      totalActions: actions.length,
+      completedActions: results.filter(r => r.success).length,
+      failedActions: results.filter(r => !r.success).length,
+      stoppedReason,
+      results,
+      finalUrl: finalUrlResult.data?.url
+    }
+  }
+
+  /**
+   * 简单的单动作 browser_ai 执行（降级方案）
+   */
+  private async executeSimpleBrowserAI(
+    toolCall: ToolCall,
+    instruction: string,
+    startTime: number,
+    context?: any
+  ): Promise<ToolResult> {
+    const parseResult = await this.browserAIParser!.parseInstruction(instruction, context)
 
     if (!parseResult.success || !parseResult.action) {
       return {
@@ -168,9 +395,6 @@ export class ToolBridge {
       }
     }
 
-    console.log(`[ToolBridge] Parsed action:`, parseResult.action)
-
-    // 步骤 3: 将解析后的动作发送到客户端执行
     const actionToolCall: ToolCall = {
       ...toolCall,
       name: 'browser_ai_execute',
@@ -180,16 +404,7 @@ export class ToolBridge {
       }
     }
 
-    const result = await this.executeLocalTool(actionToolCall)
-
-    // 在结果数据中附加解析信息
-    return {
-      ...result,
-      data: {
-        ...(typeof result.data === 'object' ? result.data : { result: result.data }),
-        parsedAction: parseResult.action
-      }
-    }
+    return this.executeLocalTool(actionToolCall)
   }
 
   /**

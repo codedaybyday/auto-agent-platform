@@ -2,7 +2,7 @@
  * Express 应用配置
  */
 
-import express from 'express'
+import express, { Express } from 'express'
 import cors from 'cors'
 import { authMiddleware } from './middleware/auth.js'
 import { createRoutes, createRateLimitMiddleware } from './routes/index.js'
@@ -17,7 +17,7 @@ interface AppDeps {
   rateLimiter: RateLimiter
 }
 
-export function createApp(deps: AppDeps) {
+export function createApp(deps: AppDeps): Express {
   const app = express()
 
   // 中间件
