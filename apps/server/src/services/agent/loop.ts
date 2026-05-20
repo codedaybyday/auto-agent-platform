@@ -12,7 +12,7 @@ import type {
   ToolResult,
   LLMResponse,
   AgentError
-} from '../types/index.js'
+} from '../../types/index.js'
 import { ToolBridge } from './bridge.js'
 import { LLMClient, LLMAPIError } from '../llm/client.js'
 import { ShortTermMemory } from '../memory/short-term.js'

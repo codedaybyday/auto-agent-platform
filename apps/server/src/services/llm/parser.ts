@@ -3,6 +3,7 @@
  * 将自然语言指令解析为结构化的浏览器动作
  *
  * 支持基于页面 DOM 上下文的智能解析
+ * 支持批量动作规划（一次规划多个动作）
  */
 
 import { LLMClient } from './client.js'
@@ -42,13 +43,13 @@ export interface ElementSemanticDescription {
   bbox?: { x: number; y: number; width: number; height: number }
 }
 
-export interface ParsedBrowserAction {
+export interface SingleBrowserAction {
   type: 'navigate' | 'click' | 'type' | 'select' | 'hover' | 'scroll' | 'wait' | 'screenshot' | 'analyze' | 'back' | 'forward' | 'close'
   url?: string
   ref?: number
-  description?: ElementSemanticDescription  // 语义描述，用于回退定位
+  description?: ElementSemanticDescription
   text?: string
-  field?: ElementSemanticDescription  // 输入框的语义描述
+  field?: ElementSemanticDescription
   direction?: 'up' | 'down'
   amount?: number
   option?: string
@@ -56,10 +57,28 @@ export interface ParsedBrowserAction {
   fullPage?: boolean
 }
 
+export interface ParsedBrowserAction extends SingleBrowserAction {}
+
+export interface BatchBrowserAction {
+  type: 'batch'
+  actions: SingleBrowserAction[]
+  reasoning: string
+  expectedOutcome: string
+  // 批量执行停止条件
+  stopConditions?: {
+    onDOMChange?: boolean    // DOM 变化时停止
+    onPopup?: boolean        // 出现弹窗时停止
+    onNavigation?: boolean   // 页面跳转时停止
+    maxActions?: number      // 最大执行动作数
+  }
+}
+
 export interface ParseResult {
   success: boolean
   action?: ParsedBrowserAction
+  batchAction?: BatchBrowserAction
   error?: string
+  isBatch: boolean
 }
 
 export class BrowserAIParser {
@@ -88,11 +107,184 @@ export class BrowserAIParser {
     if (!context) {
       return {
         success: false,
-        error: '需要页面上下文来解析此指令'
+        error: '需要页面上下文来解析此指令',
+        isBatch: false
       }
     }
 
     return this.parseWithContext(instruction, context)
+  }
+
+  /**
+   * 批量规划动作
+   * 基于当前 DOM 状态，规划完成任务的多个动作
+   */
+  async planBatchActions(
+    task: string,
+    context: PageContext,
+    maxActions: number = 5
+  ): Promise<ParseResult> {
+    console.log(`[BrowserAIParser] Planning batch actions for: ${task}`)
+    console.log(`[BrowserAIParser] Context has ${context.elements.length} elements`)
+
+    // 构建 DOM 描述
+    const domDescription = this.buildDOMDescription(context)
+
+    const systemPrompt = `你是一个浏览器自动化专家。基于当前页面 DOM，规划完成任务的步骤。
+
+当前页面：
+- URL: ${context.url}
+- 标题: ${context.title}
+
+页面元素列表（格式: ref | tag | role | type | placeholder | name | text）：
+${domDescription}
+
+任务: ${task}
+
+你的目标是规划最多 ${maxActions} 个动作来完成这个任务。
+
+重要规则：
+1. 动作之间是顺序执行关系
+2. 如果某个动作可能会改变页面状态（如点击后弹出弹窗、导航到新页面），应该在此动作后停止
+3. 优先使用 ref 来定位元素，同时提供 stableHash 作为备用
+4. 每个动作都要有完整的元素描述，用于回退定位
+
+可用动作类型：
+- navigate: 导航到 URL
+- click: 点击元素
+- type: 在输入框输入文本
+- scroll: 滚动页面
+- wait: 等待
+- screenshot: 截图
+
+停止条件（当满足以下任一条件时停止批量执行）：
+- 任务完成
+- 页面发生导航（URL 变化）
+- 出现弹窗/模态框
+- DOM 结构发生重大变化
+
+输出格式（严格 JSON）：
+{
+  "type": "batch",
+  "reasoning": "思考过程",
+  "expectedOutcome": "预期结果",
+  "stopConditions": {
+    "onDOMChange": true,
+    "onPopup": true,
+    "onNavigation": true,
+    "maxActions": ${maxActions}
+  },
+  "actions": [
+    {
+      "type": "navigate",
+      "url": "https://example.com"
+    },
+    {
+      "type": "click",
+      "ref": 5,
+      "description": {
+        "tag": "button",
+        "role": "button",
+        "name": "Submit",
+        "hash": "a1b2c3",
+        "stableHash": "d4e5f6"
+      }
+    }
+  ]
+}`
+
+    try {
+      const messages = [
+        { id: 'system', role: 'system' as const, content: systemPrompt, timestamp: Date.now() },
+        { id: 'user', role: 'user' as const, content: `任务：${task}`, timestamp: Date.now() }
+      ]
+
+      const response = await this.llmClient.chat(messages)
+      const content = response.content?.trim()
+
+      if (!content) {
+        return {
+          success: false,
+          error: 'LLM 返回空内容',
+          isBatch: false
+        }
+      }
+
+      // 解析 JSON
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
+      const jsonStr = jsonMatch ? jsonMatch[1].trim() : content
+      const parsed = JSON.parse(jsonStr)
+
+      // 验证和补充动作信息
+      if (parsed.type === 'batch' && Array.isArray(parsed.actions)) {
+        const enrichedActions = this.enrichActions(parsed.actions, context)
+
+        return {
+          success: true,
+          batchAction: {
+            type: 'batch',
+            actions: enrichedActions,
+            reasoning: parsed.reasoning || '',
+            expectedOutcome: parsed.expectedOutcome || '',
+            stopConditions: parsed.stopConditions || {
+              onDOMChange: true,
+              onPopup: true,
+              onNavigation: true,
+              maxActions: maxActions
+            }
+          },
+          isBatch: true
+        }
+      }
+
+      // 如果不是批量动作，降级为单动作
+      return {
+        success: true,
+        action: parsed,
+        isBatch: false
+      }
+
+    } catch (error) {
+      console.error('[BrowserAIParser] Batch planning failed:', error)
+      return {
+        success: false,
+        error: `批量规划失败: ${error instanceof Error ? error.message : String(error)}`,
+        isBatch: false
+      }
+    }
+  }
+
+  /**
+   * 补充动作的完整元素信息
+   */
+  private enrichActions(actions: SingleBrowserAction[], context: PageContext): SingleBrowserAction[] {
+    return actions.map(action => {
+      if (action.ref !== undefined && action.ref !== null) {
+        const element = context.elements.find(e => e.ref === action.ref)
+        if (element) {
+          // 补充完整的元素描述
+          const enrichedDesc = {
+            tag: element.tag,
+            role: element.role,
+            name: element.name,
+            text: element.text,
+            placeholder: element.placeholder,
+            type: element.type,
+            id: element.id,
+            ariaLabel: element.ariaLabel,
+            hash: element.hash,
+            stableHash: element.stableHash
+          }
+
+          if (action.type === 'type' && action.field) {
+            return { ...action, field: { ...enrichedDesc, ...action.field } }
+          } else if (action.description) {
+            return { ...action, description: { ...enrichedDesc, ...action.description } }
+          }
+        }
+      }
+      return action
+    })
   }
 
   /**
@@ -114,7 +306,8 @@ export class BrowserAIParser {
         const url = this.resolveUrl(target)
         return {
           success: true,
-          action: { type: 'navigate', url }
+          action: { type: 'navigate', url },
+          isBatch: false
         }
       }
     }
@@ -124,7 +317,8 @@ export class BrowserAIParser {
     if (urlMatch) {
       return {
         success: true,
-        action: { type: 'navigate', url: urlMatch[1] }
+        action: { type: 'navigate', url: urlMatch[1] },
+        isBatch: false
       }
     }
 
@@ -270,11 +464,12 @@ ${domDescription}
         }
       }
 
-      return { success: true, action }
+      return { success: true, action, isBatch: false }
     } catch (error) {
       return {
         success: false,
-        error: `解析失败: ${error instanceof Error ? error.message : String(error)}`
+        error: `解析失败: ${error instanceof Error ? error.message : String(error)}`,
+        isBatch: false
       }
     }
   }
@@ -302,13 +497,15 @@ ${domDescription}
     return context.elements
       .slice(0, 50) // 限制元素数量，避免超出 token 限制
       .map(e => {
+        // 对于没有 name 的输入框，尝试使用 ariaLabel 或其他属性
+        const displayName = e.name || e.ariaLabel || ''
         const parts = [
           String(e.ref),
           e.tag || '-',
           e.role || '-',
           e.type || '-',
           e.placeholder ? `"${e.placeholder.substring(0, 30)}"` : '-',
-          e.name ? `"${e.name.substring(0, 30)}"` : '-',
+          displayName ? `"${displayName.substring(0, 30)}"` : '-',
           e.text ? `"${e.text.substring(0, 40)}"` : '-',
           e.hash ? e.hash.substring(0, 8) : '-',
           e.stableHash ? e.stableHash.substring(0, 8) : '-'
