@@ -9,7 +9,7 @@
  */
 
 import { Page, Locator } from 'playwright'
-import { ElementSignature, ElementHashMap, computeElementHash, extractElementSignature, getXPath } from './element-hash'
+import { ElementSignature, ElementHashMap, computeElementHash, extractElementSignature, getXPath } from '../dom/element-hash.js'
 
 export interface LocationResult {
   locator: Locator

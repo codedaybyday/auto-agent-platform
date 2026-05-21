@@ -11,13 +11,13 @@
  */
 
 import { Page, Locator } from 'playwright'
-import { BrowserSecurityGuard, defaultSecurityGuard, SecurityError } from './browser-security'
-import { DOMSerializer, SerializedDOM, domSerializer } from './dom-serializer'
-import { RobustLocator, robustLocator } from './robust-locator'
-import type { ElementSignature } from './element-hash'
-import type { BrowserUseElement } from './browser-use-dom'
-import { browserUseDOM } from './browser-use-dom'
-import { browserManager, SessionBrowserContext } from '../browser-manager.js'
+import { BrowserSecurityGuard, defaultSecurityGuard, SecurityError } from '../security/browser-security.js'
+import { DOMSerializer, SerializedDOM, domSerializer } from '../dom/dom-serializer.js'
+import { RobustLocator, robustLocator } from '../locator/robust-locator.js'
+import type { ElementSignature } from '../dom/element-hash.js'
+import type { BrowserUseElement } from '../dom/browser-use-dom.js'
+import { browserUseDOM } from '../dom/browser-use-dom.js'
+import { browserManager } from '../../browser-manager.js'
 
 export interface PageElement {
   tag: string
@@ -59,7 +59,7 @@ export interface BrowserAction {
   error?: string
 }
 
-export interface BrowserAIConfig {
+export interface BrowserUseConfig {
   headless?: boolean
   securityGuard?: BrowserSecurityGuard
   maxRetries?: number
@@ -82,13 +82,13 @@ interface SessionState {
   } | null
 }
 
-export class BrowserAI {
+export class BrowserUse {
   private sessionStates = new Map<string, SessionState>()
-  private config: Required<BrowserAIConfig>
+  private config: Required<BrowserUseConfig>
   private securityGuard: BrowserSecurityGuard
   private domSerializer: DOMSerializer
 
-  constructor(config: BrowserAIConfig = {}) {
+  constructor(config: BrowserUseConfig = {}) {
     this.config = {
       headless: config.headless ?? false,
       securityGuard: config.securityGuard ?? defaultSecurityGuard,
@@ -174,7 +174,7 @@ export class BrowserAI {
       schema?: Record<string, any>
     }
   ): Promise<{ success: boolean; result: string }> {
-    console.log(`[BrowserAI] Executing action: ${action.type} for session: ${sessionId}`)
+    console.log(`[BrowserUse] Executing action: ${action.type} for session: ${sessionId}`)
 
     const page = await this.getPage(sessionId)
     return this.executeAction(sessionId, action, page)
@@ -194,7 +194,7 @@ export class BrowserAI {
     // 优先使用缓存的 element map（与 getPageContext 一致）
     if (signature.index !== undefined && sessionState.currentElementMap.has(signature.index)) {
       const element = sessionState.currentElementMap.get(signature.index)!
-      console.log(`[BrowserAI] Located element [${signature.index}] from cached map: ${element.tag}`)
+        console.log(`[BrowserUse] Located element [${signature.index}] from cached map: ${element.tag}`)
 
       // 使用元素的 bounds 和属性来定位
       const locator = await this.findElementFromSignature(page, element)
@@ -204,11 +204,11 @@ export class BrowserAI {
     }
 
     // 缓存未命中，使用 RobustLocator（可能 DOM 已变化）
-    console.log(`[BrowserAI] Element [${signature.index}] not in cache, using fallback...`)
+      console.log(`[BrowserUse] Element [${signature.index}] not in cache, using fallback...`)
     const result = await robustLocator.locate(page, signature)
 
     if (result) {
-      console.log(`[BrowserAI] Located element using ${result.strategy} (confidence: ${result.confidence})`)
+        console.log(`[BrowserUse] Located element using ${result.strategy} (confidence: ${result.confidence})`)
       return { locator: result.locator, strategy: result.strategy }
     }
 
@@ -472,7 +472,7 @@ export class BrowserAI {
           return { success: false, result: `Unknown action type: ${action.type}` }
       }
     } catch (error) {
-      console.error('[BrowserAI] Action failed:', error)
+        console.error('[BrowserUse] Action failed:', error)
       return {
         success: false,
         result: `Error: ${error instanceof Error ? error.message : String(error)}`
@@ -690,11 +690,11 @@ export class BrowserAI {
       stableHash: el.stableHash
     }))
 
-    console.log(`[BrowserAI] Page context: ${elements.length} elements at ${context.url}`)
+    console.log(`[BrowserUse] Page context: ${elements.length} elements at ${context.url}`)
 
     // 打印所有元素用于调试（特别是检测弹窗元素）
     elements.forEach(el => {
-      console.log(`[BrowserAI]   ref=${el.ref}, tag=${el.tag}, role=${el.role}, name="${el.name?.substring(0, 30)}"`)
+      console.log(`[BrowserUse]   ref=${el.ref}, tag=${el.tag}, role=${el.role}, name="${el.name?.substring(0, 30)}"`)
     })
 
     return {
@@ -785,7 +785,7 @@ export class BrowserAI {
 
       return hash.toString(16)
     } catch (error) {
-      console.error('[BrowserAI] Failed to get DOM hash:', error)
+      console.error('[BrowserUse] Failed to get DOM hash:', error)
       return Date.now().toString(16) // 失败时返回时间戳，确保不缓存
     }
   }
@@ -814,7 +814,7 @@ export class BrowserAI {
     this.sessionStates.delete(sessionId)
     // 通过 BrowserManager 关闭 context（保留 browser 实例）
     await browserManager.closeSession(sessionId)
-    console.log(`[BrowserAI] Session ${sessionId} closed`)
+    console.log(`[BrowserUse] Session ${sessionId} closed`)
   }
 
   /**
@@ -823,9 +823,9 @@ export class BrowserAI {
   async closeAll(): Promise<void> {
     this.sessionStates.clear()
     await browserManager.closeAllSessions()
-    console.log('[BrowserAI] All sessions closed')
+    console.log('[BrowserUse] All sessions closed')
   }
 }
 
 // 导出单例（不再是单例 browser，而是管理多个 session 的 manager）
-export const browserAI = new BrowserAI()
+export const browserUse = new BrowserUse()
