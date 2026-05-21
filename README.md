@@ -37,26 +37,39 @@ AI 助手平台，支持多模型和 Agent Loop，基于 Monorepo + Electron + N
 ## 架构
 
 ```
-┌─────────────────┐     WebSocket      ┌─────────────────┐
-│   Electron      │ ◄────────────────► │   Node.js       │
-│   (Renderer)    │     Http（请求模型） │   (Agent Loop)  │
-└────────┬────────┘ -────────────────► └────────┬────────┘
-         │                                      │
-         │ IPC                                  │ LLM API
-         ▼                                      ▼
-┌─────────────────┐                    ┌─────────────────┐
-│   Main Process  │ ── CDP / Tools ──► │   Claude/千问   │
-│   (Browser/Bash)│                    │   /DeepSeek     │
-└─────────────────┘                    └─────────────────┘
+┌─────────────────┐         IPC          ┌─────────────────┐
+│   Electron      │ ◄──────────────────► │   Main Process  │
+│   (Renderer)    │                      │ (Browser/Bash)  │
+│    UI 层        │                      │   工具执行层     │
+└────────┬────────┘                      └────────┬────────┘
+         │                                        ▲
+         │           HTTP / WebSocket             │
+         │    (请求模型 / 工具调用指令返回)        │
+         ▼                                        │
+┌─────────────────┐                               │
+│   Node.js       │◄──────────────────────────────┘
+│   (Agent Loop)  │      (模型决策后反向调用工具)
+│   服务端协调层   │
+└────────┬────────┘
+         │
+         │ LLM API (Anthropic/OpenAI 协议)
+         ▼
+┌─────────────────┐
+│   Claude/千问   │
+│  /DeepSeek      │
+│  (模型决策层)   │
+└─────────────────┘
 ```
 
 ### 通信机制
 
-| 层级 | 协议 | 用途 |
-|------|------|------|
-| UI ↔ Main | Electron IPC | 工具调用、状态同步 |
-| UI ↔ Server | WebSocket | 消息流、Agent Loop |
-| Main ↔ Browser | CDP (port 9222) | 浏览器控制 |
+| 层级 | 协议 | 方向 | 用途 |
+|------|------|------|------|
+| Renderer ↔ Main | Electron IPC | 双向 | UI 状态同步、工具执行请求 |
+| Main ↔ Server | HTTP | Main → Server | 发送用户消息到服务端 |
+| Main ↔ Server | WebSocket | 双向 | 接收模型决策后的工具调用指令 |
+| Server ↔ LLM | HTTP API | 双向 | 发送对话，接收模型响应 |
+| Main ↔ Browser | CDP (port 9222) | 双向 | 浏览器控制 |
 
 ## 记忆管理
 
