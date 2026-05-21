@@ -1,7 +1,7 @@
 export { BashTool, createBashTool, bashTool, sessionManager } from './bash/index'
 export { browserTool } from './browser.js'
-export { 
-    BrowserAI, browserAI, BrowserAIConfig, 
+export {
+    BrowserUse, browserUse, BrowserUseConfig,
     snapshotManager, PageSnapshot, SnapshotFormat,
     BrowserSecurityGuard, defaultSecurityGuard, permissiveSecurityGuard, SecurityError
-} from './browser-ai'
+} from './browser-use'
