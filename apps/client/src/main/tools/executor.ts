@@ -26,7 +26,7 @@ export async function executeToolAndReport(message: any, mainWindow: BrowserWind
     const result = await executeTool(toolCall, sessionId)
     const success = result && typeof result.success === 'boolean' ? result.success : true
 
-    sendToolResult(toolCall.id, sessionId, success, result)
+    await sendToolResult(toolCall.id, sessionId, success, result)
   } catch (error) {
     console.error('[Main] Tool execution failed:', error)
     sendToolError(
@@ -62,6 +62,14 @@ async function executeTool(toolCall: any, sessionId: string): Promise<any> {
 
     case 'browser_ai':
       result = await executeLegacyBrowserUse(toolCall, sessionId, browserUse)
+      break
+
+    case 'file_read':
+      result = await executeFileRead(toolCall)
+      break
+
+    case 'file_write':
+      result = await executeFileWrite(toolCall)
       break
 
     default:
@@ -138,7 +146,140 @@ async function executeLegacyBrowserUse(toolCall: any, sessionId: string, browser
   }
 }
 
-function sendToolResult(messageId: string, sessionId: string, success: boolean, data: any): void {
+/**
+ * 文件读取工具
+ */
+async function executeFileRead(toolCall: any): Promise<any> {
+  try {
+    const { path } = toolCall.arguments
+
+    if (!path) {
+      console.error('[FileRead] File path is required')
+      return {
+        success: false,
+        error: 'File path is required'
+      }
+    }
+
+    console.log(`[FileRead] Reading file: ${path}`)
+    const { readFileSync } = await import('fs')
+    const content = readFileSync(path, 'utf-8')
+
+    console.log(`[FileRead] Successfully read ${content.length} characters from ${path}`)
+    return {
+      success: true,
+      content,
+      size: content.length
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(`[FileRead] Error reading file: ${errorMsg}`)
+    return {
+      success: false,
+      error: errorMsg
+    }
+  }
+}
+
+/**
+ * 文件写入工具
+ */
+async function executeFileWrite(toolCall: any): Promise<any> {
+  try {
+    const { path, content } = toolCall.arguments
+
+    if (!path) {
+      console.error('[FileWrite] File path is required')
+      return {
+        success: false,
+        error: 'File path is required'
+      }
+    }
+
+    if (content === undefined) {
+      console.error('[FileWrite] File content is required')
+      return {
+        success: false,
+        error: 'File content is required'
+      }
+    }
+
+    console.log(`[FileWrite] Writing ${(content as string).length} characters to ${path}`)
+    const { writeFileSync, mkdirSync, existsSync } = await import('fs')
+    const { dirname } = await import('path')
+    
+    // 确保父目录存在
+    const dir = dirname(path)
+    if (!existsSync(dir)) {
+      console.log(`[FileWrite] Creating directory: ${dir}`)
+      mkdirSync(dir, { recursive: true })
+    }
+    
+    writeFileSync(path, content, 'utf-8')
+
+    console.log(`[FileWrite] Successfully wrote file: ${path}`)
+    return {
+      success: true,
+      message: `File written successfully: ${path}`,
+      size: (content as string).length
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error(`[FileWrite] Error writing file: ${errorMsg}`)
+    return {
+      success: false,
+      error: errorMsg
+    }
+  }
+}
+
+async function sendToolResult(messageId: string, sessionId: string, success: boolean, data: any): Promise<void> {
+  // 改进的截图处理逻辑，添加详细日志和错误处理
+  if (data?.screenshot) {
+    console.log(`[Executor] Screenshot result detected:`, {
+      type: typeof data.screenshot,
+      length: typeof data.screenshot === 'string' ? data.screenshot.length : 'N/A',
+      isBase64: typeof data.screenshot === 'string' && data.screenshot.startsWith('iVBO'),
+      preview: typeof data.screenshot === 'string' ? data.screenshot.substring(0, 20) : 'N/A'
+    })
+
+    if (typeof data.screenshot === 'string' && data.screenshot.length > 0) {
+      try {
+        console.log(`[Executor] Processing screenshot (${data.screenshot.length} chars)...`)
+        
+        // 上传截图到服务器，无论大小
+        if (data.screenshot.length > 10000) {
+          console.log(`[Executor] Uploading screenshot to server (${data.screenshot.length} chars)...`)
+          const screenshotFileUrl = await uploadScreenshotFile(sessionId, data.screenshot)
+          console.log(`[Executor] Screenshot uploaded successfully: ${screenshotFileUrl}`)
+          data.screenshotUrl = screenshotFileUrl
+          delete data.screenshot // 删除原始的 base64，节省带宽
+        } else {
+          // 小截图保留在返回值中
+          console.log(`[Executor] Screenshot is small (${data.screenshot.length} chars), keeping in response`)
+          data.screenshotUrl = undefined
+        }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        console.error(`[Executor] Screenshot processing error: ${errorMsg}`)
+        
+        // Fallback: 如果上传失败，尝试保留原始 base64（较小时）
+        if (data.screenshot.length <= 500000) {
+          console.log(`[Executor] Fallback: keeping base64 in response (${data.screenshot.length} chars)`)
+          data.screenshotUrl = undefined
+        } else {
+          console.warn(`[Executor] Screenshot too large to fallback (${data.screenshot.length} chars), removing`)
+          delete data.screenshot
+        }
+      }
+    } else if (data.screenshot) {
+      console.warn(`[Executor] Screenshot is not a valid string:`, {
+        type: typeof data.screenshot,
+        length: (data.screenshot as any)?.length
+      })
+    }
+  }
+
   ws?.send(JSON.stringify({
     type: 'tool.result',
     messageId,
@@ -151,6 +292,30 @@ function sendToolResult(messageId: string, sessionId: string, success: boolean, 
       executionTime: 0
     }
   }))
+}
+
+/**
+ * 将 base64 截图上传到服务器文件存储
+ */
+async function uploadScreenshotFile(sessionId: string, base64Data: string): Promise<string> {
+  const buffer = Buffer.from(base64Data, 'base64')
+
+  const response = await fetch(`http://localhost:3000/api/files/upload`, {
+    method: 'POST',
+    body: buffer,
+    headers: {
+      'Content-Type': 'image/png',
+      'x-session-id': sessionId,
+      'x-filename': `screenshot-${Date.now()}.png`
+    }
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to upload screenshot: ${response.statusText}`)
+  }
+
+  const result = await response.json() as { id: string; url: string }
+  return result.url
 }
 
 function sendToolError(messageId: string, sessionId: string, error: string): void {
