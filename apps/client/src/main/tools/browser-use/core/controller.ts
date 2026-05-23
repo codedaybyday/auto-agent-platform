@@ -173,7 +173,7 @@ export class BrowserUse {
       fullPage?: boolean
       schema?: Record<string, any>
     }
-  ): Promise<{ success: boolean; result: string }> {
+  ): Promise<{ success: boolean; result: string; [key: string]: any }> {
     console.log(`[BrowserUse] Executing action: ${action.type} for session: ${sessionId}`)
 
     const page = await this.getPage(sessionId)
@@ -305,7 +305,7 @@ export class BrowserUse {
     sessionId: string,
     action: any,
     page: Page
-  ): Promise<{ success: boolean; result: string }> {
+  ): Promise<{ success: boolean; result: string; [key: string]: any }> {
     const sessionState = this.getSessionState(sessionId)
 
     try {
@@ -443,9 +443,15 @@ export class BrowserUse {
             type: 'png',
             fullPage: action.fullPage
           })
+          const base64Screenshot = screenshot.toString('base64')
+          console.log(`[BrowserUse] Screenshot generated: ${screenshot.length} bytes -> ${base64Screenshot.length} chars`)
+          console.log(`[BrowserUse] Screenshot base64 prefix: ${base64Screenshot.substring(0, 20)}...`)
+          console.log(`[BrowserUse] Screenshot is PNG: ${base64Screenshot.startsWith('iVBO')}`)
           return {
             success: true,
-            result: `Screenshot captured: ${screenshot.toString('base64').substring(0, 100)}...`
+            screenshot: base64Screenshot, // 返回完整的 base64，会在 executor 中上传到文件存储
+            size: screenshot.length,
+            result: `Screenshot captured: ${screenshot.length} bytes (base64: ${base64Screenshot.length} chars)`
           }
 
         case 'analyze':

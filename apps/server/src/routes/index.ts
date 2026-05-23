@@ -11,6 +11,7 @@ import { createHealthRouter } from './health.js'
 import { createSessionsRouter } from './sessions.js'
 import { createMessagesRouter } from './messages.js'
 import { createDebugRouter } from './debug.js'
+import { createFilesRouter } from './files.js'
 
 interface RouterDeps {
   instanceId: string
@@ -30,6 +31,9 @@ export function createRoutes(deps: RouterDeps): Router {
 
   // 消息相关（嵌套路由 /api/sessions/:sessionId/*）
   router.use('/api/sessions/:sessionId', createMessagesRouter({ sessionManager: deps.sessionManager }))
+
+  // 文件服务
+  router.use('/api/files', createFilesRouter())
 
   // 开发调试
   router.use('/debug', createDebugRouter(deps))
