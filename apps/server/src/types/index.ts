@@ -42,6 +42,7 @@ export interface Message {
   toolCalls?: ToolCall[]
   toolResults?: ToolResult[]
   timestamp: number
+  reasoningContent?: string
 }
 
 export interface ToolCall {
@@ -64,6 +65,7 @@ export interface ToolResult {
 
 export interface LLMResponse {
   content?: string
+  reasoningContent?: string
   toolCalls?: ToolCall[]
   usage?: {
     promptTokens: number

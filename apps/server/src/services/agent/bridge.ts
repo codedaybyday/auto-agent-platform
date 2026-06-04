@@ -162,10 +162,26 @@ export class ToolBridge {
       return this.executeSimpleBrowserAI(toolCall, instruction, startTime)
     }
 
-    console.log(`[ToolBridge] Context loaded: ${contextResult.context?.elements?.length || 0} elements`)
+    const elementCount = contextResult.context?.elements?.length || 0
+    console.log(`[ToolBridge] Context loaded: ${elementCount} elements`)
+
+    // 关键修复：空白页 + 导航指令时，直接执行导航
+    if (elementCount === 0) {
+      const lowerInstruction = instruction.toLowerCase()
+      const isNavigation = lowerInstruction.includes('go to') ||
+                          lowerInstruction.includes('open') ||
+                          lowerInstruction.includes('navigate') ||
+                          lowerInstruction.includes('打开') ||
+                          lowerInstruction.includes('访问')
+
+      if (isNavigation) {
+        console.log(`[ToolBridge] Empty page with navigation instruction, executing directly`)
+        return this.executeSimpleBrowserAI(toolCall, instruction, startTime, contextResult.context)
+      }
+    }
 
     // 步骤 2: 使用批量规划（如果启用）
-    if (useBatch) {
+    if (useBatch && elementCount > 0) {
       console.log(`[ToolBridge] Using batch planning for: ${instruction}`)
       const batchResult = await this.executeBatchBrowserAI(
         toolCall,
@@ -242,7 +258,8 @@ export class ToolBridge {
     const batchResult = await this.executeBatchActions(
       toolCall,
       planResult.batchAction,
-      context.url
+      context.url,
+      instruction
     )
 
     const actionTypes = batchResult.results.map(r => r.action.type).join(', ')
@@ -290,71 +307,109 @@ export class ToolBridge {
 
   /**
    * 执行批量动作
+   * 方案B: DOM变化后让LLM重新判断，而不是硬编码停止逻辑
    */
   private async executeBatchActions(
     toolCall: ToolCall,
     batchAction: BatchBrowserAction,
-    initialUrl: string
+    initialUrl: string,
+    originalTask: string
   ): Promise<BatchExecutionSummary> {
     const results: BatchActionResult[] = []
-    const actions = batchAction.actions.slice(0, batchAction.stopConditions?.maxActions || 5)
+    let remainingActions = [...batchAction.actions.slice(0, batchAction.stopConditions?.maxActions || 5)]
 
     let stoppedReason: BatchExecutionSummary['stoppedReason'] = 'completed'
+    let actionIndex = 0
 
-    for (let i = 0; i < actions.length; i++) {
-      const action = actions[i]
-      console.log(`[ToolBridge] Executing action ${i + 1}/${actions.length}: ${action.type}`)
+    while (remainingActions.length > 0 && actionIndex < (batchAction.stopConditions?.maxActions || 5)) {
+      const action = remainingActions.shift()!
+      console.log(`[ToolBridge] Executing action ${actionIndex + 1}: ${action.type}`)
 
       // 执行单个动作
       const actionToolCall: ToolCall = {
         ...toolCall,
-        id: `${toolCall.id}-${i}`,
+        id: `${toolCall.id}-${actionIndex}`,
         name: 'browser_ai_execute',
-        arguments: { action, actionIndex: i }
+        arguments: { action, actionIndex }
       }
 
       const result = await this.executeLocalTool(actionToolCall)
 
       // 检查执行结果
       const actionResult: BatchActionResult = {
-        actionIndex: i,
+        actionIndex,
         action,
         success: result.success,
         result: result.data?.result || result.data,
         error: result.error
       }
 
-      // 检查是否触发停止条件
-      if (result.data?.domChanged && batchAction.stopConditions?.onDOMChange) {
-        actionResult.domChanged = true
-        stoppedReason = 'dom_changed'
-        results.push(actionResult)
-        console.log(`[ToolBridge] Stopping batch: DOM changed`)
-        break
-      }
-
-      if (result.data?.navigationOccurred && batchAction.stopConditions?.onNavigation) {
-        actionResult.navigationOccurred = true
-        stoppedReason = 'navigation'
-        results.push(actionResult)
-        console.log(`[ToolBridge] Stopping batch: Navigation occurred`)
-        break
-      }
-
-      if (result.data?.hasPopup && batchAction.stopConditions?.onPopup) {
-        stoppedReason = 'popup'
-        results.push(actionResult)
-        console.log(`[ToolBridge] Stopping batch: Popup detected`)
-        break
-      }
-
       results.push(actionResult)
+      actionIndex++
 
       // 如果动作失败，停止执行
       if (!result.success) {
         stoppedReason = 'error'
         console.log(`[ToolBridge] Stopping batch: Action failed`)
         break
+      }
+
+      // 页面导航时停止（这是明确的终止信号）
+      if (result.data?.navigationOccurred) {
+        actionResult.navigationOccurred = true
+        stoppedReason = 'navigation'
+        console.log(`[ToolBridge] Stopping batch: Navigation occurred`)
+        break
+      }
+
+      // 出现弹窗时停止
+      if (result.data?.hasPopup) {
+        stoppedReason = 'popup'
+        console.log(`[ToolBridge] Stopping batch: Popup detected`)
+        break
+      }
+
+      // DOM变化时，让LLM评估下一步（方案B核心）
+      if (result.data?.domChanged) {
+        actionResult.domChanged = true
+        console.log(`[ToolBridge] DOM changed, evaluating progress with LLM...`)
+
+        // 获取最新页面上下文
+        const contextResult = await this.getPageContext()
+        if (!contextResult.success) {
+          console.log(`[ToolBridge] Failed to get page context, stopping`)
+          stoppedReason = 'error'
+          break
+        }
+
+        // 让LLM评估进度
+        const executedActions = results.map(r => r.action)
+        const evaluation = await this.browserAIParser!.evaluateProgress(
+          originalTask,
+          executedActions,
+          contextResult.context!
+        )
+
+        console.log(`[ToolBridge] LLM evaluation: ${evaluation.status} - ${evaluation.reasoning}`)
+
+        if (evaluation.status === 'completed') {
+          stoppedReason = 'completed'
+          console.log(`[ToolBridge] Task completed according to LLM`)
+          break
+        } else if (evaluation.status === 'stop') {
+          stoppedReason = 'error'
+          console.log(`[ToolBridge] LLM decided to stop: ${evaluation.message}`)
+          break
+        } else if (evaluation.status === 'continue' && evaluation.nextActions && evaluation.nextActions.length > 0) {
+          // LLM提供了新的动作序列，替换剩余动作
+          console.log(`[ToolBridge] LLM provided ${evaluation.nextActions.length} new actions`)
+          remainingActions = evaluation.nextActions
+        } else if (evaluation.status === 'retry') {
+          // 重试当前动作
+          console.log(`[ToolBridge] LLM suggests retry`)
+          remainingActions.unshift(action)
+        }
+        // continue但没有新动作时，继续执行原有的 remainingActions
       }
     }
 
@@ -366,7 +421,7 @@ export class ToolBridge {
     })
 
     return {
-      totalActions: actions.length,
+      totalActions: actionIndex,
       completedActions: results.filter(r => r.success).length,
       failedActions: results.filter(r => !r.success).length,
       stoppedReason,

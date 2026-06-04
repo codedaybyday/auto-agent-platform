@@ -16,6 +16,7 @@ import type {
 import { ToolBridge } from './bridge.js'
 import { LLMClient, LLMAPIError } from '../llm/client.js'
 import { ShortTermMemory } from '../memory/short-term.js'
+import { log } from '@auto-agent/shared-utils'
 
 export interface AgentLoopEvents {
   'run_start': { input: string; timestamp: number }
@@ -80,11 +81,11 @@ export class AgentLoop extends EventEmitter {
    * Observation -> Thought -> Action -> (Repeat)
    */
   async run(userInput: string): Promise<void> {
-    console.log(`[AgentLoop] ========== 开始新任务 ==========`)
-    console.log(`[AgentLoop] 输入: ${userInput.substring(0, 100)}${userInput.length > 100 ? '...' : ''}`)
-    console.log(`[AgentLoop] 会话ID: ${this.state.sessionId}`)
-    console.log(`[AgentLoop] 模型: ${this.config.model}`)
-    console.log(`[AgentLoop] 是否本地模型: ${this.llmClient.isLocal}`)
+    log.info('AgentLoop', '========== 开始新任务 ==========')
+    log.info('AgentLoop', `输入: ${userInput.substring(0, 100)}${userInput.length > 100 ? '...' : ''}`)
+    log.info('AgentLoop', `会话ID: ${this.state.sessionId}`)
+    log.info('AgentLoop', `模型: ${this.config.model}`)
+    log.info('AgentLoop', `是否本地模型: ${this.llmClient.isLocal}`)
 
     // 初始化
     this.state.status = 'running'
@@ -108,7 +109,7 @@ export class AgentLoop extends EventEmitter {
         this.emit('run_error', { error, timestamp: Date.now() })
         throw error
       }
-      console.log(`[AgentLoop] ${checkResult.message}`)
+      log.info('AgentLoop', checkResult.message)
     }
 
     try {
@@ -123,29 +124,20 @@ export class AgentLoop extends EventEmitter {
 
         // Step 1: Observation（构建上下文）
         const context = this.buildContext()
-        console.log(`[AgentLoop] 迭代 ${this.state.iteration} - 构建上下文: ${context.length} 条消息`)
-        console.log(`[AgentLoop] 上下文:`, JSON.stringify(context, null, 2))
+        log.debug('AgentLoop', `迭代 ${this.state.iteration} - 构建上下文: ${context.length} 条消息`, context)
 
         // Step 2: Thought（LLM 思考）
-        console.log(`[AgentLoop] 调用 LLM...`)
+        log.info('AgentLoop', 'Calling LLM...')
         const llmResponse = await this.callLLM(context)
-        console.log(`[AgentLoop] LLM 响应:`, {
-          contentLength: llmResponse.content?.length || 0,
-          toolCallsCount: llmResponse.toolCalls?.length || 0,
-          hasToolCalls: !!llmResponse.toolCalls && llmResponse.toolCalls.length > 0
-        })
 
         // Step 3: 判断是 Action 还是 Final Answer
         if (llmResponse.toolCalls && llmResponse.toolCalls.length > 0) {
           // 需要执行工具（Action）
           this.state.status = 'waiting_tool'
-          console.log(`[AgentLoop] 检测到 ${llmResponse.toolCalls.length} 个工具调用`)
+          log.info('AgentLoop', `检测到 ${llmResponse.toolCalls.length} 个工具调用`)
 
           for (const toolCall of llmResponse.toolCalls) {
-            console.log('[AgentLoop] 工具信息:', toolCall)
-            console.log(`[AgentLoop] 执行工具: ${toolCall.name}`, {
-              arguments: JSON.stringify(toolCall.arguments).substring(0, 200)
-            })
+            log.debug('AgentLoop', `执行工具: ${toolCall.name}`, toolCall)
 
             // 通知前端工具开始执行
             this.emit('tool_start', {
@@ -155,12 +147,7 @@ export class AgentLoop extends EventEmitter {
 
             // 执行工具（可能走 WebSocket 到客户端）
             const result = await this.executeTool(toolCall)
-            console.log(`[AgentLoop] 工具执行结果:`, {
-              success: result.success,
-              hasData: !!result.data,
-              hasError: !!result.error,
-              executionTime: result.executionTime
-            })
+            log.perf('AgentLoop', `工具 ${toolCall.name}`, result.executionTime || 0)
 
             // 添加工具结果到上下文（Observation）
             this.addToolResult(toolCall, result)
@@ -174,17 +161,17 @@ export class AgentLoop extends EventEmitter {
           }
 
           // LOOP CONTINUE: 带着工具结果继续循环
-          console.log(`[AgentLoop] 继续循环，等待 LLM 处理工具结果`)
+          log.info('AgentLoop', '继续循环，等待 LLM 处理工具结果')
           continue
         } else {
           // 得到最终答案，结束循环
-          console.log(`[AgentLoop] 得到最终答案，结束循环`)
+          log.success('AgentLoop', '得到最终答案，结束循环')
           this.state.status = 'completed'
           this.emit('run_complete', {
             output: llmResponse.content || '',
             timestamp: Date.now()
           })
-          console.log(`[AgentLoop] ========== 任务完成 ==========`)
+          log.success('AgentLoop', '========== 任务完成 ==========')
           break
         }
       }
@@ -199,7 +186,7 @@ export class AgentLoop extends EventEmitter {
       }
     } catch (error) {
       this.state.status = 'error'
-      console.error(`[AgentLoop] 错误:`, error)
+      log.error('AgentLoop', '执行错误', error)
 
       // 处理 LLM API 错误，提供友好错误消息
       let friendlyError: Error
@@ -257,7 +244,7 @@ export class AgentLoop extends EventEmitter {
    * 通知客户端清理工具，清理 pending 请求
    */
   async cleanup(): Promise<void> {
-    console.log(`[AgentLoop ${this.state.sessionId}] Starting cleanup...`)
+    log.info('AgentLoop', `${this.state.sessionId} - Starting cleanup...`)
 
     // 1. 停止循环
     this.stop()
@@ -269,23 +256,23 @@ export class AgentLoop extends EventEmitter {
     try {
       await this.notifyClientCleanup()
     } catch (error) {
-      console.error(`[AgentLoop ${this.state.sessionId}] Failed to notify client cleanup:`, error)
+      log.error('AgentLoop', `${this.state.sessionId} - Failed to notify client cleanup`, error)
     }
 
     // 4. 移除所有监听器
     this.removeAllListeners()
 
-    console.log(`[AgentLoop ${this.state.sessionId}] Cleanup completed`)
+    log.success('AgentLoop', `${this.state.sessionId} - Cleanup completed`)
   }
 
   /**
    * 通知客户端清理本地工具资源
    */
   private async notifyClientCleanup(): Promise<void> {
-    console.log(`[AgentLoop ${this.state.sessionId}] Notifying client to cleanup tools`)
+    log.info('AgentLoop', `${this.state.sessionId} - Notifying client to cleanup tools`)
 
     if (!this.wsClient) {
-      console.log(`[AgentLoop ${this.state.sessionId}] No WebSocket client bound, skipping notification`)
+      log.warn('AgentLoop', `${this.state.sessionId} - No WebSocket client bound, skipping notification`)
       return
     }
 
@@ -302,9 +289,9 @@ export class AgentLoop extends EventEmitter {
 
     try {
       this.wsClient.socket?.send(JSON.stringify(cleanupMessage))
-      console.log(`[AgentLoop ${this.state.sessionId}] Cleanup notification sent to client`)
+      log.success('AgentLoop', `${this.state.sessionId} - Cleanup notification sent to client`)
     } catch (error) {
-      console.error(`[AgentLoop ${this.state.sessionId}] Failed to send cleanup notification:`, error)
+      log.error('AgentLoop', `${this.state.sessionId} - Failed to send cleanup notification`, error)
     }
   }
 
@@ -348,26 +335,27 @@ export class AgentLoop extends EventEmitter {
   private getDefaultSystemPrompt(): string {
     return `你是一个智能助手，可以帮助用户完成各种任务。
 你可以使用以下工具：
-- browser: 基础浏览器控制（使用精确的选择器）
 - browser_ai: AI 增强版浏览器控制（使用自然语言指令，更智能的元素定位）
 - bash: 执行系统命令
 - file_read/file_write: 读写本地文件
 
-browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然语言指令如：
-- "go to github.com"
-- "click Sign in button"
-- "type hello in search box"
-- "search for TypeScript tutorials"
-- "get page summary" (获取页面结构摘要)
+browser_ai 工具支持以下自然语言指令：
+- 导航: "go to github.com", "open baidu.com"
+- 点击: "click the login button", "click 百度一下"
+- 输入: "type hello in the search box", "输入 美团"
+- 搜索: "search for TypeScript", "搜索 Claude"
+- 滚动: "scroll down", "滚动到底部"
+- 回退: "go back", "back to previous page", "返回上一页"
+- 截图: "take a screenshot"
 
 **重要规则**：
 1. 如果用户要求"搜索XXX"或"打开XXX网站"，当成功到达目标网站后，任务即完成，无需进一步分析页面内容
 2. 除非用户明确要求"分析页面"或"提取信息"，否则到达目标后应直接返回结果
 3. 避免无意义的重复分析，每个任务最多 10 步
+4. 浏览器操作只能使用 browser_ai 工具，不要使用其他浏览器工具
 
 请根据用户的需求决定是否需要使用工具。
-如果需要使用工具，优先使用 browser_ai 进行浏览器操作，除非需要精确的选择器控制。
-如果需要使用工具，请明确调用；如果可以直接回答，请直接回答。回复尽量用中文`
+如果需要使用工具，请明确调用 browser_ai；如果可以直接回答，请直接回答。回复尽量用中文`
   }
 
   private buildContext(): Message[] {
@@ -376,15 +364,10 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
   }
 
   private async callLLM(messages: Message[]): Promise<LLMResponse> {
-    console.log(`[AgentLoop] 调用 LLM，消息数: ${messages.length}`)
+    log.debug('AgentLoop', `调用 LLM，消息数: ${messages.length}`, { totalMessages: messages.length })
 
     // 调用 LLM（传入userId用于限流检查）
     const response = await this.llmClient.chat(messages, this.userId)
-
-    console.log(`[AgentLoop] LLM 返回:`, {
-      contentPreview: response.content?.substring(0, 100) || '(空)',
-      toolCallsCount: response.toolCalls?.length || 0
-    })
 
     // 添加助手消息到历史
     if (response.content || response.toolCalls) {
@@ -392,6 +375,7 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
         id: this.generateId(),
         role: 'assistant',
         content: response.content || '',
+        reasoningContent: response.reasoningContent,
         toolCalls: response.toolCalls,
         timestamp: Date.now()
       })
@@ -417,12 +401,7 @@ browser_ai 工具适用于需要智能元素检测的复杂任务，支持自然
 
     // 打印短期记忆统计
     const stats = this.shortTermMemory.getStats()
-    console.log(`[AgentLoop] 短期记忆状态:`, {
-      totalMessages: stats.totalMessages,
-      currentRound: stats.currentRound,
-      compressedCount: stats.compressedCount,
-      estimatedTokens: stats.estimatedTokens
-    })
+    log.debug('AgentLoop', '短期记忆状态', stats)
   }
 
   private addToolResult(toolCall: ToolCall, result: ToolResult): void {

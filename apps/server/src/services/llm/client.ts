@@ -164,7 +164,7 @@ export class LLMClient {
    * 获取请求体
    * 针对不同提供商调整参数
    */
-  private getRequestBody(messages: Message[], options: { stream?: boolean; includeTools?: boolean } = {}): object {
+  private getRequestBody(messages: Message[], options: { stream?: boolean; includeTools?: boolean; responseFormat?: 'json' | 'text' } = {}): object {
     const body: Record<string, any> = {
       model: this.config.model,
       messages: this.formatMessages(messages),
@@ -179,6 +179,11 @@ export class LLMClient {
     // 流式输出
     if (options.stream) {
       body.stream = true
+    }
+
+    // 强制 JSON 输出（OpenAI 兼容格式）
+    if (options.responseFormat === 'json') {
+      body.response_format = { type: 'json_object' }
     }
 
     // 工具调用（部分本地模型可能不支持）
@@ -268,7 +273,7 @@ export class LLMClient {
   /**
    * 非流式对话
    */
-  async chat(messages: Message[], userId?: string): Promise<LLMResponse> {
+  async chat(messages: Message[], userId?: string, options?: { includeTools?: boolean; responseFormat?: 'json' | 'text' }): Promise<LLMResponse> {
     // 检查限流（如果提供了userId）
     if (this.rateLimiter && userId) {
       const check = this.rateLimiter.checkLLMRequest(userId)
@@ -283,7 +288,10 @@ export class LLMClient {
     const response = await fetch(`${this.config.baseURL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(this.getRequestBody(messages, { includeTools: true }))
+      body: JSON.stringify(this.getRequestBody(messages, {
+        includeTools: options?.includeTools ?? true,
+        responseFormat: options?.responseFormat
+      }))
     })
 
     if (!response.ok) {
@@ -303,6 +311,7 @@ export class LLMClient {
 
     return {
       content: choice.message?.content || '',
+      reasoningContent: choice.message?.reasoning_content || '',
       toolCalls: toolCalls?.length > 0 ? toolCalls : undefined,
       usage: {
         promptTokens: data.usage?.prompt_tokens || 0,
@@ -368,7 +377,7 @@ export class LLMClient {
         }
       }
       if (msg.role === 'assistant' && msg.toolCalls) {
-        return {
+        const result: any = {
           role: 'assistant',
           content: msg.content,
           tool_calls: msg.toolCalls.map(tool => ({
@@ -379,6 +388,17 @@ export class LLMClient {
               arguments: JSON.stringify(tool.arguments)
             }
           }))
+        }
+        if (msg.reasoningContent) {
+          result.reasoning_content = msg.reasoningContent
+        }
+        return result
+      }
+      if (msg.role === 'assistant' && msg.reasoningContent) {
+        return {
+          role: 'assistant',
+          content: msg.content,
+          reasoning_content: msg.reasoningContent
         }
       }
       return {

@@ -37,38 +37,49 @@ AI 助手平台，支持多模型和 Agent Loop，基于 Monorepo + Electron + N
 ## 架构
 
 ```
-┌─────────────────┐         IPC          ┌─────────────────┐
-│   Electron      │ ◄──────────────────► │   Main Process  │
-│   (Renderer)    │                      │ (Browser/Bash)  │
-│    UI 层        │                      │   工具执行层     │
-└────────┬────────┘                      └────────┬────────┘
-         │                                        ▲
-         │           HTTP / WebSocket             │
-         │    (请求模型 / 工具调用指令返回)        │
-         ▼                                        │
-┌─────────────────┐                               │
-│   Node.js       │◄──────────────────────────────┘
-│   (Agent Loop)  │      (模型决策后反向调用工具)
-│   服务端协调层   │
-└────────┬────────┘
-         │
-         │ LLM API (Anthropic/OpenAI 协议)
-         ▼
-┌─────────────────┐
-│   Claude/千问   │
-│  /DeepSeek      │
-│  (模型决策层)   │
-└─────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     Electron Client                              │
+│  ┌─────────────────┐         IPC          ┌─────────────────┐   │
+│  │                 │ ◄──────────────────► │                 │   │
+│  │   Renderer      │                      │  Main Process   │   │
+│  │   (UI 层)       │                      │ (Browser/Bash)  │   │
+│  │                 │                      │  (工具执行层)    │   │
+│  └─────────────────┘                      └────────┬────────┘   │
+│                                                     │             │
+└─────────────────────────────────────────────────────┼─────────────┘
+                                                      │
+                              HTTP / WebSocket        │
+                         (请求模型/工具指令返回)       │
+                              (双向通讯)               │
+                                                      ▼
+                                             ┌─────────────────┐
+                                             │                 │
+                                             │   Node.js       │
+                                             │  (Agent Loop)   │
+                                             │ (服务端协调层)   │
+                                             │                 │
+                                             └────────┬────────┘
+                                                      │
+                                                      │ LLM API
+                                                      │ (Anthropic/OpenAI)
+                                                      ▼
+                                             ┌─────────────────┐
+                                             │  Claude/千问    │
+                                             │ /DeepSeek       │
+                                             │  (模型决策层)    │
+                                             │                 │
+                                             └─────────────────┘
 ```
 
 ### 通信机制
 
 | 层级 | 协议 | 方向 | 用途 |
 |------|------|------|------|
-| Renderer ↔ Main | Electron IPC | 双向 | UI 状态同步、工具执行请求 |
-| Main ↔ Server | HTTP | Main → Server | 发送用户消息到服务端 |
-| Main ↔ Server | WebSocket | 双向 | 接收模型决策后的工具调用指令 |
-| Server ↔ LLM | HTTP API | 双向 | 发送对话，接收模型响应 |
+| Renderer ↔ Main | Electron IPC | 双向 | UI 状态同步、用户输入转发、工具结果返回 |
+| Main ↔ Server | HTTP | Main → Server | 发送用户消息、历史上下文 |
+| Main ↔ Server | WebSocket | Server → Main | 接收模型决策后的工具调用指令 |
+| Main ↔ Server | WebSocket | Main → Server | 发送工具执行结果 |
+| Server ↔ LLM | HTTP API | 双向 | 发送对话上下文，接收模型响应 |
 | Main ↔ Browser | CDP (port 9222) | 双向 | 浏览器控制 |
 
 ## 记忆管理

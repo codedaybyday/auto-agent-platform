@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@auto-agent/shared-types": "workspace:*",
+    "@auto-agent/shared-utils": "workspace:*",
     "@electron-toolkit/preload": "^2.0.0",
     "@electron-toolkit/utils": "^2.0.1",
     "@mtfe/sso-web-oidc-cli": "^1.4.1",

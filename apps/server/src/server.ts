@@ -8,6 +8,7 @@ import { createApp } from './app.js'
 import { WebSocketGateway } from './websocket/server.js'
 import { SessionManager } from './services/agent/session.js'
 import { rateLimiter } from './services/rate-limiter.js'
+import { log } from '@auto-agent/shared-utils'
 
 export interface ServerContext {
   instanceId: string
@@ -20,7 +21,7 @@ export interface ServerContext {
 export function startServer(): ServerContext {
   // 生成实例 ID
   const instanceId = `${process.env.HOSTNAME || 'local'}-${Date.now()}`
-  console.log(`[Server] Instance ID: ${instanceId}`)
+  log.info('Server', `Instance ID: ${instanceId}`)
 
   // 初始化服务
   const sessionManager = new SessionManager(instanceId, {
@@ -54,37 +55,16 @@ export function startServer(): ServerContext {
   const PORT = config.port || 3000
 
   server.listen(PORT, () => {
-    console.log(`
-🚀 Auto Agent Server running
-   Port: ${PORT}
-   Instance: ${instanceId}
-   WebSocket: ws://localhost:${PORT}/ws
-
-📚 API Endpoints:
-   GET  /health              - Health check
-   GET  /api/sessions        - List sessions
-   POST /api/sessions        - Create session
-   GET  /api/sessions/:id    - Get session
-   DEL  /api/sessions/:id    - Delete session
-   POST /api/sessions/:id/chat - Send message
-   GET  /api/sessions/:id/messages - Get history
-
-🔌 WebSocket Events:
-   connect, session.create, agent.run
-   agent.pause, agent.stop, tool.result
-
-⚠️  TODO:
-   ✅ 接入外部登录系统 (middleware/auth.ts)
-   - 接入 Redis 做跨实例状态同步
-   - 接入 PostgreSQL 做持久化存储
-`)
+    log.success('Server', `Server running on port ${PORT}`)
+    log.info('Server', `Instance: ${instanceId}`)
+    log.info('Server', `WebSocket: ws://localhost:${PORT}/ws`)
   })
 
   // 优雅关闭
   const gracefulShutdown = (signal: string) => {
-    console.log(`[Server] ${signal} received, shutting down gracefully`)
+    log.info('Server', `${signal} received, shutting down gracefully`)
     server.close(() => {
-      console.log('[Server] Server closed')
+      log.info('Server', 'Server closed')
       process.exit(0)
     })
   }

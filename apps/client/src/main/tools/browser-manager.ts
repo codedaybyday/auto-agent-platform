@@ -13,6 +13,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { spawn } from 'child_process'
+import { log } from '@auto-agent/shared-utils'
 
 export interface SessionBrowserPage {
   page: Page
@@ -91,7 +92,7 @@ export class BrowserManager {
       'Local State'
     ]
 
-    console.log('[BrowserManager] Copying login files...')
+    log.info('BrowserManager', 'Copying login files...')
 
     // 异步并行复制，减少阻塞
     const copyPromises = filesToCopy.map(async (file) => {
@@ -109,9 +110,9 @@ export class BrowserManager {
             writeStream.on('finish', resolve)
             readStream.pipe(writeStream)
           })
-          console.log(`[BrowserManager] Copied ${file}`)
+          log.info('BrowserManager', `Copied ${file}`)
         } catch (err) {
-          console.warn(`[BrowserManager] Failed to copy ${file}:`, err)
+          log.warn('BrowserManager', `Failed to copy ${file}:`, err)
         }
       }
     })
@@ -133,7 +134,7 @@ export class BrowserManager {
     const sourceDir = this.getChromeUserDataDir()
     this.tempUserDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chrome-cdp-'))
 
-    console.log(`[BrowserManager] Created temp profile at ${this.tempUserDataDir}`)
+    log.info('BrowserManager', `Created temp profile at ${this.tempUserDataDir}`)
 
     // 复制登录文件
     await this.copyLoginFiles(sourceDir, this.tempUserDataDir)
@@ -157,11 +158,11 @@ export class BrowserManager {
     // 检查端口是否被占用
     const isPortInUse = await this.checkChromeDebugPort()
     if (isPortInUse) {
-      console.log('[BrowserManager] Port 9222 already in use, using existing Chrome')
+      log.info('BrowserManager', 'Port 9222 already in use, using existing Chrome')
       return
     }
 
-    console.log('[BrowserManager] Launching independent Chrome with CDP...')
+    log.info('BrowserManager', 'Launching independent Chrome with CDP...')
 
     // 创建临时用户数据目录（复制登录态）
     const userDataDir = await this.createUserDataDirWithLogin()
@@ -191,7 +192,7 @@ export class BrowserManager {
       '--js-flags=--max-old-space-size=1024'
     ]
 
-    console.log(`[BrowserManager] Chrome args: ${chromeArgs.join(' ')}`)
+    log.info('BrowserManager', `Chrome args: ${chromeArgs.join(' ')}`)
 
     // 启动 Chrome
     this.chromeProcess = spawn(chromePath, chromeArgs, {
@@ -206,12 +207,12 @@ export class BrowserManager {
       stderrOutput += msg + '\n'
       // 只打印关键错误
       if (msg.includes('ERROR') || msg.includes('FATAL')) {
-        console.log(`[Chrome] ${msg.substring(0, 200)}`)
+        log.info('Chrome', `${msg.substring(0, 200)}`)
       }
     })
 
     this.chromeProcess.on('exit', (code: number) => {
-      console.log(`[BrowserManager] Chrome process exited with code ${code}`)
+      log.info('BrowserManager', `Chrome process exited with code ${code}`)
       this.chromeProcess = null
     })
 
@@ -225,16 +226,16 @@ export class BrowserManager {
       await this.sleep(1000)
       const isReady = await this.checkChromeDebugPort()
       if (isReady) {
-        console.log('[BrowserManager] Chrome is ready with CDP port 9222')
+        log.info('BrowserManager', 'Chrome is ready with CDP port 9222')
         return
       }
       if (attempts % 10 === 0) {
-        console.log(`[BrowserManager] Waiting for Chrome... (${attempts}/${maxAttempts})`)
+        log.info('BrowserManager', `Waiting for Chrome... (${attempts}/${maxAttempts})`)
       }
       attempts++
     }
 
-    console.error('[BrowserManager] Chrome failed to start. Last errors:', stderrOutput.substring(0, 500))
+    log.error('BrowserManager', ' Chrome failed to start. Last errors:', stderrOutput.substring(0, 500))
     throw new Error('Chrome failed to start with debug port')
   }
 
@@ -249,37 +250,37 @@ export class BrowserManager {
         await this.launchChromeWithCDP()
       }
 
-      console.log(`[BrowserManager] Connecting to Chrome via CDP...`)
+      log.info('BrowserManager', `Connecting to Chrome via CDP...`)
 
       try {
         // 使用 CDP 连接
         this.browser = await chromium.connectOverCDP(this.cdpEndpoint)
 
-        console.log(`[BrowserManager] Connected to Chrome`)
-        console.log(`[BrowserManager] Browser version: ${await this.browser.version()}`)
+        log.info('BrowserManager', `Connected to Chrome`)
+        log.info('BrowserManager', `Browser version: ${await this.browser.version()}`)
 
         // 获取 context
         const contexts = this.browser.contexts()
         if (contexts.length > 0) {
           this.context = contexts[0]
           const pages = await this.context.pages()
-          console.log(`[BrowserManager] Using existing context with ${pages.length} pages`)
+          log.info('BrowserManager', `Using existing context with ${pages.length} pages`)
         } else {
           this.context = await this.browser.newContext({
             viewport: this.config.viewport
           })
-          console.log(`[BrowserManager] Created new context`)
+          log.info('BrowserManager', `Created new context`)
         }
 
         // 监听断开
         this.browser.on('disconnected', () => {
-          console.log('[BrowserManager] Browser disconnected')
+          log.info('BrowserManager', 'Browser disconnected')
           this.browser = null
           this.context = null
           this.pages.clear()
         })
       } catch (error) {
-        console.error('[BrowserManager] Failed to connect via CDP:', error)
+        log.error('BrowserManager', ' Failed to connect via CDP:', error)
         throw error
       }
     }
@@ -293,7 +294,7 @@ export class BrowserManager {
    * - 多个会话在同一窗口中
    */
   async getPage(sessionId: string): Promise<Page> {
-    console.log(`[BrowserManager] getPage for session: ${sessionId}`)
+    log.info('BrowserManager', `getPage for session: ${sessionId}`)
 
     if (!sessionId) {
       throw new Error('sessionId is required')
@@ -304,7 +305,7 @@ export class BrowserManager {
     let sessionPage = this.pages.get(sessionId)
 
     if (!sessionPage || sessionPage.page.isClosed()) {
-      console.log(`[BrowserManager] Creating new tab for session: ${sessionId}`)
+      log.info('BrowserManager', `Creating new tab for session: ${sessionId}`)
 
       const page = await context.newPage()
       await page.setViewportSize(this.config.viewport)
@@ -319,15 +320,15 @@ export class BrowserManager {
       }
 
       this.pages.set(sessionId, sessionPage)
-      console.log(`[BrowserManager] Total tabs: ${this.pages.size}, sessions: ${Array.from(this.pages.keys()).join(', ')}`)
+      log.info('BrowserManager', `Total tabs: ${this.pages.size}, sessions: ${Array.from(this.pages.keys()).join(', ')}`)
 
       page.on('close', () => {
-        console.log(`[BrowserManager] Tab closed for session: ${sessionId}`)
+        log.info('BrowserManager', `Tab closed for session: ${sessionId}`)
         this.pages.delete(sessionId)
       })
     } else {
       sessionPage.lastUsedAt = Date.now()
-      console.log(`[BrowserManager] Reusing tab for session: ${sessionId}`)
+      log.info('BrowserManager', `Reusing tab for session: ${sessionId}`)
     }
 
     return sessionPage.page
@@ -345,7 +346,7 @@ export class BrowserManager {
    * 关闭指定会话的 tab
    */
   async closeSession(sessionId: string): Promise<void> {
-    console.log(`[BrowserManager] closeSession: ${sessionId}`)
+    log.info('BrowserManager', `closeSession: ${sessionId}`)
 
     if (!sessionId) return
 
@@ -354,10 +355,10 @@ export class BrowserManager {
       try {
         if (!sessionPage.page.isClosed()) {
           await sessionPage.page.close()
-          console.log(`[BrowserManager] Closed tab for: ${sessionId}`)
+          log.info('BrowserManager', `Closed tab for: ${sessionId}`)
         }
       } catch (e) {
-        console.warn(`[BrowserManager] Error closing tab:`, e)
+        log.warn('BrowserManager', `Error closing tab:`, e)
       }
       this.pages.delete(sessionId)
 
@@ -372,7 +373,7 @@ export class BrowserManager {
    * 关闭所有会话的 tabs
    */
   async closeAllSessions(): Promise<void> {
-    console.log(`[BrowserManager] Closing all ${this.pages.size} tabs`)
+    log.info('BrowserManager', `Closing all ${this.pages.size} tabs`)
     for (const [sessionId, sessionPage] of this.pages) {
       try {
         if (!sessionPage.page.isClosed()) {
@@ -395,14 +396,14 @@ export class BrowserManager {
       await this.browser.close()
       this.browser = null
       this.context = null
-      console.log('[BrowserManager] Disconnected from Chrome')
+      log.info('BrowserManager', 'Disconnected from Chrome')
     }
 
     // 终止 Chrome 进程
     if (this.chromeProcess) {
       try {
         process.kill(-this.chromeProcess.pid)
-        console.log('[BrowserManager] Chrome process terminated')
+        log.info('BrowserManager', 'Chrome process terminated')
       } catch (e) {
         // ignore
       }
@@ -413,10 +414,10 @@ export class BrowserManager {
     if (this.tempUserDataDir) {
       try {
         fs.rmSync(this.tempUserDataDir, { recursive: true, force: true })
-        console.log(`[BrowserManager] Cleaned up: ${this.tempUserDataDir}`)
+        log.info('BrowserManager', `Cleaned up: ${this.tempUserDataDir}`)
         this.tempUserDataDir = null
       } catch (err) {
-        console.warn('[BrowserManager] Cleanup failed:', err)
+        log.warn('BrowserManager', ' Cleanup failed:', err)
       }
     }
   }
@@ -434,6 +435,36 @@ export class BrowserManager {
       activeTabs: activeSessionIds.length,
       sessionIds: activeSessionIds
     }
+  }
+
+  /**
+   * 预启动 Chrome（后台静默初始化）
+   * 在用户实际使用前就准备好浏览器，减少首次等待时间
+   */
+  async prelaunchChrome(): Promise<void> {
+    log.info('BrowserManager', 'Prelaunching Chrome in background...')
+
+    // 检查是否已就绪
+    const isReady = await this.checkChromeDebugPort()
+    if (isReady) {
+      log.info('BrowserManager', 'Chrome already running, prelaunch skipped')
+      return
+    }
+
+    try {
+      await this.launchChromeWithCDP()
+      log.info('BrowserManager', '✓ Chrome prelaunched successfully')
+    } catch (error) {
+      log.error('BrowserManager', ' Prelaunch failed:', error)
+      throw error
+    }
+  }
+
+  /**
+   * 检查 Chrome 是否已预启动
+   */
+  async isChromeReady(): Promise<boolean> {
+    return this.checkChromeDebugPort()
   }
 }
 
