@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron'
 // @ts-ignore
 import WebSocket from 'ws'
+import { log } from '@auto-agent/shared-utils'
 
 /**
  * WebSocket 连接管理（纯通信层，不包含业务逻辑）
@@ -48,12 +49,12 @@ export function generateId(): string {
 export function connectToServer(mainWindow: BrowserWindow | null): Promise<void> {
   return new Promise((resolve, reject) => {
     const wsUrl = SERVER_URL.replace(/^http/, 'ws') + '/ws'
-    console.log('[Main] Connecting to server:', wsUrl)
+    log.info('Main', 'Connecting to server: ' + wsUrl)
 
     ws = new WebSocket(wsUrl)
 
     ws.on('open', () => {
-      console.log('[Main] WebSocket connected')
+      log.success('Main', 'WebSocket connected')
 
       // 发送连接认证
       ws!.send(JSON.stringify({
@@ -83,32 +84,32 @@ export function connectToServer(mainWindow: BrowserWindow | null): Promise<void>
     ws.on('message', async (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString())
-        console.log('[Main] Received message:', message.type)
+        log.debug('Main', 'Received message', { type: message.type })
         // 调用注册的消息处理器
         if (messageHandler) {
           await messageHandler(message, mainWindowRef)
         } else {
-          console.warn('[Main] No message handler registered!')
+          log.warn('Main', 'No message handler registered!')
         }
       } catch (error) {
-        console.error('[Main] Failed to parse message:', error)
+        log.error('Main', 'Failed to parse message', error)
       }
     })
 
     ws.on('error', (error: Error) => {
-      console.error('[Main] WebSocket error:', error)
+      log.error('Main', 'WebSocket error', error)
       reject(error)
     })
 
     ws.on('close', () => {
-      console.log('[Main] WebSocket closed')
+      log.info('Main', 'WebSocket closed')
       
       if (pendingSessionResolve) {
         pendingSessionResolve = null
       }
       
       // 尝试重连
-      setTimeout(() => connectToServer(mainWindow).catch(console.error), 3000)
+      setTimeout(() => connectToServer(mainWindow).catch(err => log.error('Main', 'Reconnect failed', err)), 3000)
     })
   })
 }

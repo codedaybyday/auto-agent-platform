@@ -2,6 +2,9 @@
  * Auto Agent Platform - 共享工具函数
  */
 
+// 导出埋点工具（带时间戳的 console）
+export { log, timer } from './log.js'
+
 /**
  * 生成唯一 ID
  */

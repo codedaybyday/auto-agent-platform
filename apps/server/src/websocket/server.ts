@@ -9,6 +9,7 @@ import type { WSConnection, WSMessage, MessageType } from '../types/index.js'
 import { SessionManager } from '../services/agent/session.js'
 import { EventBus } from './event-bus.js'
 import { RateLimiter } from '../services/rate-limiter.js'
+import { log } from '@auto-agent/shared-utils'
 
 export class WebSocketGateway {
   private wss: WebSocketServer
@@ -119,7 +120,7 @@ export class WebSocketGateway {
 
   private setupServer(): void {
     this.wss.on('connection', (socket: WebSocket, req: any) => {
-      console.log('[WebSocket] New connection from', req.socket.remoteAddress)
+      log.info('WebSocket', `New connection from ${req.socket.remoteAddress}`)
 
       // 等待客户端发送认证信息
       const authTimeout = setTimeout(() => {
@@ -152,7 +153,7 @@ export class WebSocketGateway {
             socket.close(4002, 'Not authenticated')
           }
         } catch (error) {
-          console.error('[WebSocket] Invalid message:', error)
+          log.error('WebSocket', 'Invalid message', error)
           socket.send(JSON.stringify({
             type: 'error',
             payload: { message: 'Invalid message format' }
@@ -168,7 +169,7 @@ export class WebSocketGateway {
       })
 
       socket.on('error', (error) => {
-        console.error('[WebSocket] Socket error:', error)
+        log.error('WebSocket', 'Socket error', error)
       })
 
       socket.on('pong', () => {
@@ -242,14 +243,14 @@ export class WebSocketGateway {
       }
     }
 
-    console.log(`[WebSocket] User ${userId} authenticated, connection ${connectionId}, registered ${sessions.length} sessions`)
+    log.success('WebSocket', `User ${userId} authenticated, connection ${connectionId}, registered ${sessions.length} sessions`)
   }
 
   /**
    * 处理业务消息
    */
   private async handleMessage(connection: WSConnection, message: WSMessage): Promise<void> {
-    console.log(`[WebSocket] Received ${message.type} from ${connection.userId}`)
+    log.debug('WebSocket', `Received ${message.type}`, { userId: connection.userId })
 
     try {
       switch (message.type) {
@@ -293,10 +294,10 @@ export class WebSocketGateway {
           break
 
         default:
-          console.log(`[WebSocket] Unknown message type: ${message.type}`)
+          log.warn('WebSocket', `Unknown message type: ${message.type}`)
       }
     } catch (error) {
-      console.error('[WebSocket] Error handling message:', error)
+      log.error('WebSocket', 'Error handling message', error)
       this.sendToConnection(connection.id, {
         type: 'error' as MessageType,
         messageId: this.generateId(),
@@ -411,7 +412,7 @@ export class WebSocketGateway {
 
     // 启动 Agent Loop
     agentLoop.run(content).catch(error => {
-      console.error('[WebSocket] Agent loop error:', error)
+      log.error('WebSocket', 'Agent loop error', error)
     })
   }
 
@@ -466,9 +467,9 @@ export class WebSocketGateway {
     const toolBridge = (agentLoop as any).toolBridge
     if (toolBridge && toolBridge.handleToolResult) {
       toolBridge.handleToolResult(messageId, toolResult)
-      console.log(`[WebSocket] Tool result passed to AgentLoop for session ${sessionId}`)
+      log.debug('WebSocket', `Tool result passed to AgentLoop`, { sessionId })
     } else {
-      console.warn(`[WebSocket] ToolBridge not found for session ${sessionId}`)
+      log.warn('WebSocket', `ToolBridge not found for session ${sessionId}`)
     }
   }
 
@@ -485,9 +486,9 @@ export class WebSocketGateway {
     const toolBridge = (agentLoop as any).toolBridge
     if (toolBridge && toolBridge.handleToolError) {
       toolBridge.handleToolError(messageId, error || 'Unknown error')
-      console.log(`[WebSocket] Tool error passed to AgentLoop for session ${sessionId}`)
+      log.debug('WebSocket', `Tool error passed to AgentLoop`, { sessionId })
     } else {
-      console.warn(`[WebSocket] ToolBridge not found for session ${sessionId}`)
+      log.warn('WebSocket', `ToolBridge not found for session ${sessionId}`)
     }
   }
 
@@ -506,7 +507,7 @@ export class WebSocketGateway {
    */
   sendToUser(userId: string, message: WSMessage): void {
     const connectionIds = this.userConnections.get(userId)
-    console.log(`[WebSocket] Sending ${message.type} to user ${userId}, connections: ${connectionIds?.size || 0}`)
+    log.debug('WebSocket', `Sending ${message.type} to user`, { userId, connections: connectionIds?.size || 0 })
     if (connectionIds) {
       for (const connId of connectionIds) {
         this.sendToConnection(connId, message)
@@ -524,7 +525,7 @@ export class WebSocketGateway {
       this.eventBus.unregisterConnection(conn.userId, connectionId)
       this.userConnections.get(conn.userId)?.delete(connectionId)
       this.connections.delete(connectionId)
-      console.log(`[WebSocket] Connection ${connectionId} removed`)
+      log.info('WebSocket', `Connection ${connectionId} removed`)
     }
   }
 

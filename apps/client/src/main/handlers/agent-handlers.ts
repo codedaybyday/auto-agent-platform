@@ -11,6 +11,7 @@ import {
   notifySessionsUpdated
 } from '../core/session-manager'
 import { getPendingSessionResolve, setPendingSessionResolve } from '../core/server-connection'
+import { log } from '@auto-agent/shared-utils'
 
 /**
  * Agent IPC 处理器
@@ -22,16 +23,16 @@ let initPromise: Promise<{ success: boolean; sessionId?: string; error?: string 
 export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
   // 初始化 Agent
   ipcMain.handle('agent:init', async () => {
-    console.log('[Main] agent:init called')
+    log.info('Main', 'agent:init called')
 
     const currentId = getCurrentSessionId()
     if (currentId) {
-      console.log('[Main] Using existing session:', currentId)
+      log.info('Main', `Using existing session: ${currentId}`)
       return { success: true, sessionId: currentId }
     }
 
     if (isInitializing && initPromise) {
-      console.log('[Main] Initialization already in progress, waiting...')
+      log.info('Main', 'Initialization already in progress, waiting...')
       return initPromise
     }
 
@@ -41,17 +42,17 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
         const { connectToServer, ws, generateId } = await import('../core/server-connection')
 
         if (!ws || ws.readyState !== 1) { // WebSocket.OPEN
-          console.log('[Main] WebSocket not connected, connecting...')
+          log.info('Main', 'WebSocket not connected, connecting...')
           await connectToServer(mainWindow)
         }
 
         const sessionId = getCurrentSessionId()
         if (sessionId) {
-          console.log('[Main] Session created during connection:', sessionId)
+          log.success('Main', `Session created during connection: ${sessionId}`)
           return { success: true, sessionId }
         }
 
-        console.log('[Main] Creating new session...')
+        log.info('Main', 'Creating new session...')
         
         const sessionPromise = new Promise<string>((resolve, reject) => {
           setPendingSessionResolve(resolve)
@@ -71,12 +72,12 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
           payload: {}
         }))
 
-        console.log('[Main] Sent session.create message')
+        log.info('Main', 'Sent session.create message')
         const newSessionId = await sessionPromise
-        console.log('[Main] Session created successfully:', newSessionId)
+        log.success('Main', `Session created successfully: ${newSessionId}`)
         return { success: true, sessionId: newSessionId }
       } catch (error) {
-        console.error('[Main] agent:init error:', error)
+        log.error('Main', 'agent:init error', error)
         return {
           success: false,
           error: error instanceof Error ? error.message : String(error)
@@ -136,7 +137,7 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
     try {
       const sessionId = getCurrentSessionId()
       if (!sessionId) {
-        console.log('[Main] clear_history: No active session')
+        log.warn('Main', 'clear_history: No active session')
         return { success: false, error: 'No active session' }
       }
 
@@ -144,7 +145,7 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
       mainWindow?.webContents.send('agent:history_cleared')
       return { success: true }
     } catch (error) {
-      console.error('[Main] clear_history error:', error)
+      log.error('Main', 'clear_history error', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error)
@@ -187,7 +188,7 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
       }
       return { success: true, sessionId: result.sessionId }
     } catch (error) {
-      console.error('[Main] Create session error:', error)
+      log.error('Main', 'Create session error', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error)
@@ -216,11 +217,11 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
       
       if (success && getCurrentSessionId() === sessionId) {
         try {
-          const { browserUse } = await import('../tools/browser-use/index.js')
-          await browserUse.close(sessionId)
-          console.log(`[Main] Browser context cleaned up for deleted session: ${sessionId}`)
+          const { browserController } = await import('../tools/browser-use/index.js') as { browserController: import('../tools/browser-use/index.js').BrowserController }
+          await browserController.close(sessionId)
+          log.success('Main', `Browser context cleaned up for deleted session: ${sessionId}`)
         } catch (browserError) {
-          console.warn(`[Main] Failed to cleanup browser for session ${sessionId}:`, browserError)
+          log.warn('Main', `Failed to cleanup browser for session ${sessionId}`, browserError)
         }
       }
 

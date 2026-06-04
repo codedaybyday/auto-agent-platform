@@ -12,6 +12,7 @@ import { createSessionsRouter } from './sessions.js'
 import { createMessagesRouter } from './messages.js'
 import { createDebugRouter } from './debug.js'
 import { createFilesRouter } from './files.js'
+import { log } from '@auto-agent/shared-utils'
 
 interface RouterDeps {
   instanceId: string
@@ -45,7 +46,7 @@ export function createRoutes(deps: RouterDeps): Router {
 
   // 全局错误处理
   router.use((err: Error, _req: Request, res: Response, _next: any) => {
-    console.error('[Server] Unhandled error:', err)
+    log.error('Server', 'Unhandled error', err)
     res.status(500).json({
       error: process.env.NODE_ENV === 'production'
         ? 'Internal server error'

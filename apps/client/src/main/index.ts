@@ -7,6 +7,8 @@ import { createWindow, getAllWindows } from './services/window-manager'
 import { setupAgentHandlers } from './handlers/agent-handlers'
 import { handleServerMessage } from './handlers/message-handler'
 import { cleanupAllTools } from './tools/executor'
+import { browserManager } from './tools/browser-manager'
+import { log } from '@auto-agent/shared-utils'
 
 app.whenReady().then(async () => {
   if (process.platform === 'win32') {
@@ -27,15 +29,20 @@ app.whenReady().then(async () => {
   setupAgentHandlers(mainWindow)
 
   // 启动时连接服务端
-  connectToServer(mainWindow).catch(console.error)
+  connectToServer(mainWindow).catch(err => log.error('Main', 'Failed to connect to server', err))
 
   // 运行 Bash 工具测试
   try {
     const { testBashTool } = await import('./test-bash.js')
     await testBashTool()
   } catch (error) {
-    console.error('[Main] Bash tool test failed:', error)
+    log.error('Main', 'Bash tool test failed', error)
   }
+
+  // 预启动 Chrome（后台静默初始化，减少首次使用等待时间）
+  browserManager.prelaunchChrome().catch(err => {
+    log.warn('Main', 'Chrome prelaunch failed (will retry on first use)', err)
+  })
 
   app.on('activate', () => {
     if (getAllWindows().length === 0) {

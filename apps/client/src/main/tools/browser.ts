@@ -1,9 +1,9 @@
 import { Browser, BrowserContext, Page, chromium } from 'playwright'
 
 interface BrowserState {
-  page: unknown | null
-  browser: unknown | null
-  context: unknown | null
+  page: Page | null
+  browser: Browser | null
+  context: BrowserContext | null
   currentUrl: string | null
 }
 

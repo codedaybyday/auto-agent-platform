@@ -4,7 +4,13 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['encrypted-electron-store'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['encrypted-electron-store', '@auto-agent/shared-utils', '@auto-agent/shared-types'] })],
+    resolve: {
+      alias: {
+        '@auto-agent/shared-types': resolve(__dirname, '../../packages/shared-types/src/index.ts'),
+        '@auto-agent/shared-utils': resolve(__dirname, '../../packages/shared-utils/src/index.ts')
+      }
+    },
     build: {
       outDir: 'out/main',
       rollupOptions: {
