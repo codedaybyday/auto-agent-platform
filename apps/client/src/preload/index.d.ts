@@ -12,6 +12,8 @@ export interface AgentAPI {
   clearHistory: () => Promise<{ success: boolean; error?: string }>
   getMessages: () => Promise<{ success: boolean; messages?: Message[]; error?: string }>
   onMessage: (callback: (message: Message) => void) => () => void
+  onStreamChunk: (callback: (data: { chunk: string; sessionId?: string }) => void) => () => void
+  onStreamDone: (callback: (data: { sessionId?: string }) => void) => () => void
   onProcessing: (callback: (isProcessing: boolean) => void) => () => void
   onToolStart: (callback: (data: { toolCall: ToolCall }) => void) => () => void
   onToolResult: (callback: (data: { toolCall: ToolCall; result: ToolResult }) => void) => () => void

@@ -361,6 +361,7 @@ export class LLMClient {
     let fullContent = ''
     let fullReasoningContent = ''
     const toolCallChunks: Map<number, any> = new Map()
+    let usageData: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } = {}
 
     while (true) {
       const { done, value } = await reader.read()
@@ -376,6 +377,12 @@ export class LLMClient {
 
           try {
             const parsed = JSON.parse(data)
+
+            // 捕获 usage 数据（在流的最后）
+            if (parsed.usage) {
+              usageData = parsed.usage
+            }
+
             const delta = parsed.choices?.[0]?.delta
 
             // 处理内容
@@ -428,8 +435,8 @@ export class LLMClient {
             name: chunk.function.name,
             arguments: JSON.parse(chunk.function.arguments)
           })
-        } catch {
-          // 如果解析失败，跳过
+        } catch (e) {
+          console.error(`[LLMClient] Failed to parse tool call arguments for ${chunk.function?.name}:`, e)
         }
       }
     }
@@ -438,7 +445,11 @@ export class LLMClient {
       content: fullContent,
       reasoningContent: fullReasoningContent,
       toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+      usage: {
+        promptTokens: usageData.prompt_tokens || 0,
+        completionTokens: usageData.completion_tokens || 0,
+        totalTokens: usageData.total_tokens || 0
+      }
     }
   }
 
