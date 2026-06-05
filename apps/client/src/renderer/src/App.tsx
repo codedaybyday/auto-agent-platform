@@ -80,15 +80,15 @@ function App(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
-  // 流式消息累积内容
-  const [streamingContent, setStreamingContent] = useState<string>('')
-  const [isStreaming, setIsStreaming] = useState<boolean>(false)
+  // 流式消息累积内容 - 按会话存储，避免切换会话时丢失
+  const [streamingContentMap, setStreamingContentMap] = useState<Map<string, string>>(new Map())
+  const [isStreamingMap, setIsStreamingMap] = useState<Map<string, boolean>>(new Map())
 
   // ==================== 所有 Ref 必须在最顶层声明 ====================
   const messagesRef = useRef<Message[]>([])
   const processingMapRef = useRef<Map<string, boolean>>(new Map())
   const currentSessionIdRef = useRef<string | null>(null)
-  const streamingContentRef = useRef<string>('')
+  const streamingContentMapRef = useRef<Map<string, string>>(new Map())
 
   // ==================== 所有 Effects 必须在最顶层声明 ====================
   const handleLogin = async () => {
@@ -126,13 +126,16 @@ function App(): JSX.Element {
     currentSessionIdRef.current = currentSessionId
   }, [currentSessionId])
 
-  // 同步 streamingContent ref
+  // 同步 streamingContentMap ref
   useEffect(() => {
-    streamingContentRef.current = streamingContent
-  }, [streamingContent])
+    streamingContentMapRef.current = streamingContentMap
+  }, [streamingContentMap])
 
   // ==================== 计算属性（在 Hooks 之后）====================
   const isProcessing = currentSessionId ? processingMap.get(currentSessionId) || false : false
+  // 当前会话的流式状态
+  const streamingContent = currentSessionId ? streamingContentMap.get(currentSessionId) || '' : ''
+  const isStreaming = currentSessionId ? isStreamingMap.get(currentSessionId) || false : false
 
   useEffect(() => {
     // 初始化 Agent，完成后加载会话列表
@@ -186,10 +189,21 @@ function App(): JSX.Element {
         return newMessages
       })
 
-      // 如果是 assistant 消息且正在流式，清空流式内容
-      if (message.role === 'assistant' && isStreaming) {
-        setStreamingContent('')
-        setIsStreaming(false)
+      // 如果是 assistant 消息且正在流式，清空当前会话的流式内容
+      if (message.role === 'assistant') {
+        const msgSessionId = message.sessionId || currentSessionIdRef.current
+        if (msgSessionId && isStreamingMap.get(msgSessionId)) {
+          setStreamingContentMap((prev) => {
+            const newMap = new Map(prev)
+            newMap.delete(msgSessionId)
+            return newMap
+          })
+          setIsStreamingMap((prev) => {
+            const newMap = new Map(prev)
+            newMap.set(msgSessionId, false)
+            return newMap
+          })
+        }
       }
 
       // 更新当前会话的消息计数
@@ -223,50 +237,66 @@ function App(): JSX.Element {
 
     // 监听流式消息块（SSE 逐字输出）
     const unsubscribeStreamChunk = window.api.agent.onStreamChunk((data: { chunk: string; sessionId?: string }) => {
-      const activeSessionId = currentSessionIdRef.current
-      if (data.sessionId && data.sessionId !== activeSessionId) {
-        return // 非当前会话的消息
-      }
-      // 使用函数式更新，在更新 state 的同时同步更新 ref
-      setStreamingContent((prev) => {
-        const newContent = prev + data.chunk
-        streamingContentRef.current = newContent
-        return newContent
+      const targetSessionId = data.sessionId || currentSessionIdRef.current
+      if (!targetSessionId) return
+
+      // 按会话存储流式内容
+      setStreamingContentMap((prev) => {
+        const newMap = new Map(prev)
+        const currentContent = newMap.get(targetSessionId) || ''
+        newMap.set(targetSessionId, currentContent + data.chunk)
+        return newMap
       })
-      setIsStreaming(true)
+      setIsStreamingMap((prev) => {
+        const newMap = new Map(prev)
+        newMap.set(targetSessionId, true)
+        return newMap
+      })
     })
 
     // 监听流式结束
     const unsubscribeStreamDone = window.api.agent.onStreamDone((data: { sessionId?: string }) => {
-      const activeSessionId = currentSessionIdRef.current
-      if (data.sessionId && data.sessionId !== activeSessionId) {
-        return
-      }
-      setIsStreaming(false)
-      // 流式结束，将累积的内容保存为消息
-      const finalContent = streamingContentRef.current
+      const targetSessionId = data.sessionId || currentSessionIdRef.current
+      if (!targetSessionId) return
+
+      // 获取该会话的流式内容
+      const finalContent = streamingContentMapRef.current.get(targetSessionId) || ''
+
+      // 更新流式状态
+      setIsStreamingMap((prev) => {
+        const newMap = new Map(prev)
+        newMap.set(targetSessionId, false)
+        return newMap
+      })
+
       if (finalContent) {
-        const newMessage: Message = {
-          id: `stream-${Date.now()}`,
-          role: 'assistant',
-          content: finalContent,
-          timestamp: Date.now(),
-          sessionId: activeSessionId || undefined
+        // 只有当前会话才更新消息列表（避免干扰其他会话的显示）
+        if (targetSessionId === currentSessionIdRef.current) {
+          const newMessage: Message = {
+            id: `stream-${Date.now()}`,
+            role: 'assistant',
+            content: finalContent,
+            timestamp: Date.now(),
+            sessionId: targetSessionId
+          }
+          setMessages((prev) => [...prev, newMessage])
         }
-        setMessages((prev) => [...prev, newMessage])
+
         // 更新会话消息计数
-        if (activeSessionId) {
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === activeSessionId
-                ? { ...s, messageCount: s.messageCount + 1, updatedAt: Date.now() }
-                : s
-            )
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === targetSessionId
+              ? { ...s, messageCount: s.messageCount + 1, updatedAt: Date.now() }
+              : s
           )
-        }
-        // 清空流式内容
-        setStreamingContent('')
-        streamingContentRef.current = ''
+        )
+
+        // 清空该会话的流式内容
+        setStreamingContentMap((prev) => {
+          const newMap = new Map(prev)
+          newMap.delete(targetSessionId)
+          return newMap
+        })
       }
     })
 
@@ -358,10 +388,8 @@ function App(): JSX.Element {
       setCurrentSessionId(sessionId)
       currentSessionIdRef.current = sessionId
 
-      // 重置流式状态，避免跨会话污染
-      setStreamingContent('')
-      streamingContentRef.current = ''
-      setIsStreaming(false)
+      // 注意：不再清空流式状态，允许切换回正在流式输出的会话时继续显示
+      // 流式内容按会话隔离存储在 streamingContentMap 中
 
       // 清零未读计数
       setSessions((prev) =>
@@ -435,8 +463,19 @@ function App(): JSX.Element {
     console.log('[App] clearHistory result:', result)
     if (result.success) {
       setMessages([])
-      setStreamingContent('')
-      streamingContentRef.current = ''
+      // 清空当前会话的流式内容
+      if (currentSessionId) {
+        setStreamingContentMap((prev) => {
+          const newMap = new Map(prev)
+          newMap.delete(currentSessionId)
+          return newMap
+        })
+        setIsStreamingMap((prev) => {
+          const newMap = new Map(prev)
+          newMap.set(currentSessionId, false)
+          return newMap
+        })
+      }
       console.log('[App] Messages cleared locally')
     } else {
       console.error('[App] Failed to clear history:', result.error)
