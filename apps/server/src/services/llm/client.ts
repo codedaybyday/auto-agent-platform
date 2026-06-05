@@ -322,13 +322,32 @@ export class LLMClient {
   }
 
   /**
-   * 流式对话
+   * 流式对话（支持工具调用）
+   * @param messages 消息列表
+   * @param onChunk 每当有内容 chunk 或 tool_call delta 时调用
+   * @param userId 用户ID（用于限流检查）
+   * @returns 完整响应（包含 content 和 toolCalls）
    */
-  async *streamChat(messages: Message[]): AsyncGenerator<string> {
+  async streamChat(
+    messages: Message[],
+    onChunk?: (chunk: string, toolCallDelta?: any) => void,
+    userId?: string
+  ): Promise<LLMResponse> {
+    // 检查限流
+    if (this.rateLimiter && userId) {
+      const check = this.rateLimiter.checkLLMRequest(userId)
+      if (!check.allowed) {
+        throw new LLMAPIError(
+          `请求过于频繁，请 ${check.retryAfter} 秒后再试`,
+          429
+        )
+      }
+    }
+
     const response = await fetch(`${this.config.baseURL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(this.getRequestBody(messages, { stream: true }))
+      body: JSON.stringify(this.getRequestBody(messages, { stream: true, includeTools: true }))
     })
 
     if (!response.ok) {
@@ -339,6 +358,9 @@ export class LLMClient {
     if (!reader) throw new Error('No response body')
 
     const decoder = new TextDecoder()
+    let fullContent = ''
+    let fullReasoningContent = ''
+    const toolCallChunks: Map<number, any> = new Map()
 
     while (true) {
       const { done, value } = await reader.read()
@@ -350,17 +372,73 @@ export class LLMClient {
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6)
-          if (data === '[DONE]') return
+          if (data === '[DONE]') continue
 
           try {
             const parsed = JSON.parse(data)
-            const content = parsed.choices?.[0]?.delta?.content
-            if (content) yield content
+            const delta = parsed.choices?.[0]?.delta
+
+            // 处理内容
+            if (delta?.content) {
+              fullContent += delta.content
+              onChunk?.(delta.content, undefined)
+            }
+
+            // 处理 reasoning_content（DeepSeek 等模型）
+            if (delta?.reasoning_content) {
+              fullReasoningContent += delta.reasoning_content
+            }
+
+            // 累积 tool_calls
+            if (delta?.tool_calls) {
+              for (const toolCall of delta.tool_calls) {
+                const index = toolCall.index
+                if (!toolCallChunks.has(index)) {
+                  toolCallChunks.set(index, {
+                    id: toolCall.id,
+                    function: { name: '', arguments: '' }
+                  })
+                }
+                const existing = toolCallChunks.get(index)
+                if (toolCall.function?.name) {
+                  existing.function.name = toolCall.function.name
+                }
+                if (toolCall.function?.arguments) {
+                  existing.function.arguments += toolCall.function.arguments
+                }
+                // 通知 tool_call delta
+                onChunk?.('', toolCall)
+              }
+            }
           } catch {
-            // ignore
+            // ignore parse errors
           }
         }
       }
+    }
+
+    // 构建 toolCalls
+    const toolCalls: ToolCall[] = []
+    for (let i = 0; i < toolCallChunks.size; i++) {
+      const chunk = toolCallChunks.get(i)
+      if (chunk) {
+        try {
+          toolCalls.push({
+            id: chunk.id,
+            name: chunk.function.name,
+            arguments: JSON.parse(chunk.function.arguments)
+          })
+        } catch {
+          // 如果解析失败，跳过
+        }
+      }
+    }
+
+    return {
+      content: fullContent,
+      reasoningContent: fullReasoningContent,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
     }
   }
 

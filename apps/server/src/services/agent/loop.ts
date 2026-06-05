@@ -391,11 +391,57 @@ export class AgentLoop extends EventEmitter {
     return this.shortTermMemory.getContextMessages(this.config.systemPrompt)
   }
 
-  private async callLLM(messages: Message[]): Promise<LLMResponse> {
-    log.debug('AgentLoop', `调用 LLM，消息数: ${messages.length}`, { totalMessages: messages.length })
+  private async callLLM(messages: Message[], useStream: boolean = true): Promise<LLMResponse> {
+    log.debug('AgentLoop', `调用 LLM，消息数: ${messages.length}`, { totalMessages: messages.length, useStream })
 
-    // 调用 LLM（传入userId用于限流检查）
-    const response = await this.llmClient.chat(messages, this.userId)
+    let response: LLMResponse
+
+    if (useStream) {
+      // SSE 流式模式 - 逐字实时推送到前端
+      let fullContent = ''
+      let fullReasoningContent = ''
+      let accumulatedToolCalls: any[] = []
+
+      response = await this.llmClient.streamChat(
+        messages,
+        (chunk, toolCallDelta) => {
+          // 实时发送 SSE 格式 chunk 到前端
+          if (chunk) {
+            fullContent += chunk
+            this.emit('stream_chunk', {
+              type: 'sse',
+              event: 'content',
+              data: chunk,
+              sessionId: this.state.sessionId
+            })
+          }
+          // 累积 tool_calls（流式结束后统一处理）
+          if (toolCallDelta) {
+            accumulatedToolCalls.push(toolCallDelta)
+          }
+        },
+        this.userId
+      )
+
+      // 发送 SSE 结束标记
+      this.emit('stream_chunk', {
+        type: 'sse',
+        event: 'done',
+        data: '[DONE]',
+        sessionId: this.state.sessionId
+      })
+
+      // 使用流式返回的完整内容
+      response = {
+        content: response.content || fullContent,
+        reasoningContent: response.reasoningContent || fullReasoningContent,
+        toolCalls: response.toolCalls,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+      }
+    } else {
+      // 非流式模式 - 一次性获取完整响应
+      response = await this.llmClient.chat(messages, this.userId)
+    }
 
     // 添加助手消息到历史
     if (response.content || response.toolCalls) {
@@ -408,9 +454,20 @@ export class AgentLoop extends EventEmitter {
         timestamp: Date.now()
       })
 
-      // 流式输出
-      if (response.content) {
-        this.emit('stream_chunk', { content: response.content })
+      // 非流式模式下，发送 SSE 格式消息
+      if (!useStream && response.content) {
+        this.emit('stream_chunk', {
+          type: 'sse',
+          event: 'content',
+          data: response.content,
+          sessionId: this.state.sessionId
+        })
+        this.emit('stream_chunk', {
+          type: 'sse',
+          event: 'done',
+          data: '[DONE]',
+          sessionId: this.state.sessionId
+        })
       }
     }
 
