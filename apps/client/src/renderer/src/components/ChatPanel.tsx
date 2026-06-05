@@ -27,6 +27,8 @@ interface Message {
 interface ChatPanelProps {
   messages: Message[]
   isProcessing: boolean
+  streamingContent?: string
+  isStreaming?: boolean
   onSendMessage: (content: string) => void
   onClearHistory: () => void
 }
@@ -67,7 +69,7 @@ function ToolResultDisplay({ result }: { result: ToolResult }): JSX.Element {
   )
 }
 
-function MessageBubble({ message, isLoading }: { message: Message; isLoading?: boolean }): JSX.Element {
+function MessageBubble({ message, isLoading, isStreaming }: { message: Message; isLoading?: boolean; isStreaming?: boolean }): JSX.Element {
   const isUser = message.role === 'user'
 
   return (
@@ -78,10 +80,11 @@ function MessageBubble({ message, isLoading }: { message: Message; isLoading?: b
       </div>
 
       {message.content ? (
-        <div className="message-content">
+        <div className={`message-content ${isStreaming ? 'streaming' : ''}`}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {message.content}
           </ReactMarkdown>
+          {isStreaming && <span className="streaming-cursor">▋</span>}
         </div>
       ) : isLoading ? (
         <div className="message-content loading">
@@ -113,6 +116,8 @@ function MessageBubble({ message, isLoading }: { message: Message; isLoading?: b
 export function ChatPanel({
   messages,
   isProcessing,
+  streamingContent = '',
+  isStreaming = false,
   onSendMessage,
   onClearHistory
 }: ChatPanelProps): JSX.Element {
@@ -185,7 +190,21 @@ export function ChatPanel({
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
-            {isProcessing && messages[messages.length - 1]?.role !== 'assistant' && (
+            {/* 流式消息显示（逐字输出） */}
+            {isStreaming && streamingContent && (
+              <MessageBubble
+                key="streaming"
+                message={{
+                  id: 'streaming',
+                  role: 'assistant',
+                  content: streamingContent,
+                  timestamp: Date.now()
+                }}
+                isStreaming={true}
+              />
+            )}
+            {/* 非流式加载状态 */}
+            {isProcessing && !isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
               <MessageBubble
                 key="loading"
                 message={{

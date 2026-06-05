@@ -38,6 +38,10 @@ export interface AgentAPI {
   renameSession: (sessionId: string, title: string) => Promise<{ success: boolean; error?: string }>
   /** 监听新消息 */
   onMessage: (callback: (message: Message) => void) => () => void
+  /** 监听流式消息块（SSE 逐字输出） */
+  onStreamChunk: (callback: (data: { chunk: string; sessionId?: string }) => void) => () => void
+  /** 监听流式结束 */
+  onStreamDone: (callback: (data: { sessionId?: string }) => void) => () => void
   /** 监听处理状态 */
   onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => () => void
   /** 监听工具开始执行 */
@@ -85,6 +89,18 @@ const agentAPI: AgentAPI = {
     const handler = (_event: Electron.IpcRendererEvent, message: Message) => callback(message)
     ipcRenderer.on('agent:message', handler)
     return () => ipcRenderer.removeListener('agent:message', handler)
+  },
+
+  onStreamChunk: (callback: (data: { chunk: string; sessionId?: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { chunk: string; sessionId?: string }) => callback(data)
+    ipcRenderer.on('agent:stream_chunk', handler)
+    return () => ipcRenderer.removeListener('agent:stream_chunk', handler)
+  },
+
+  onStreamDone: (callback: (data: { sessionId?: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { sessionId?: string }) => callback(data)
+    ipcRenderer.on('agent:stream_done', handler)
+    return () => ipcRenderer.removeListener('agent:stream_done', handler)
   },
 
   onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => {

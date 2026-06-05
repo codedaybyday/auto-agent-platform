@@ -44,8 +44,31 @@ const mergeMessages = (existing: Message[], incoming: Message[]): Message[] => {
   return Array.from(messageMap.values()).sort((a, b) => a.timestamp - b.timestamp)
 }
 
-// 全局消息 ID 集合，防止 React StrictMode 导致的重复处理
-const processedMessageIds = new Set<string>()
+// 有界消息 ID 集合，防止 React StrictMode 导致的重复处理
+// 限制大小为 1000，避免长期运行时的内存泄漏
+class BoundedMessageIdSet {
+  private ids: string[] = []
+  private maxSize: number
+
+  constructor(maxSize: number = 1000) {
+    this.maxSize = maxSize
+  }
+
+  has(id: string): boolean {
+    return this.ids.includes(id)
+  }
+
+  add(id: string): void {
+    if (this.has(id)) return
+    this.ids.push(id)
+    // 超出限制时移除最旧的
+    if (this.ids.length > this.maxSize) {
+      this.ids.shift()
+    }
+  }
+}
+
+const processedMessageIds = new BoundedMessageIdSet(1000)
 
 function App(): JSX.Element {
   // ==================== 所有 State 必须在最顶层声明 ====================
@@ -57,11 +80,15 @@ function App(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  // 流式消息累积内容
+  const [streamingContent, setStreamingContent] = useState<string>('')
+  const [isStreaming, setIsStreaming] = useState<boolean>(false)
 
   // ==================== 所有 Ref 必须在最顶层声明 ====================
   const messagesRef = useRef<Message[]>([])
   const processingMapRef = useRef<Map<string, boolean>>(new Map())
   const currentSessionIdRef = useRef<string | null>(null)
+  const streamingContentRef = useRef<string>('')
 
   // ==================== 所有 Effects 必须在最顶层声明 ====================
   const handleLogin = async () => {
@@ -98,6 +125,11 @@ function App(): JSX.Element {
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId
   }, [currentSessionId])
+
+  // 同步 streamingContent ref
+  useEffect(() => {
+    streamingContentRef.current = streamingContent
+  }, [streamingContent])
 
   // ==================== 计算属性（在 Hooks 之后）====================
   const isProcessing = currentSessionId ? processingMap.get(currentSessionId) || false : false
@@ -138,11 +170,27 @@ function App(): JSX.Element {
       }
 
       // 当前会话：添加到消息列表
+      // 注意：流式消息已在 stream_done 中添加，这里避免重复
+      if (message.id?.startsWith('stream-')) {
+        // 这是流式消息的回显，忽略
+        return
+      }
+
       setMessages((prev) => {
+        // 检查是否已存在（避免重复）
+        if (prev.some(m => m.id === message.id)) {
+          return prev
+        }
         const newMessages = [...prev, message]
         console.log('[App] 添加消息到当前会话:', activeSessionId, '消息数:', newMessages.length)
         return newMessages
       })
+
+      // 如果是 assistant 消息且正在流式，清空流式内容
+      if (message.role === 'assistant' && isStreaming) {
+        setStreamingContent('')
+        setIsStreaming(false)
+      }
 
       // 更新当前会话的消息计数
       setSessions((prev) =>
@@ -173,8 +221,58 @@ function App(): JSX.Element {
       console.log('Tool result:', data.toolCall.name, data.result.is_error ? 'error' : 'success')
     })
 
+    // 监听流式消息块（SSE 逐字输出）
+    const unsubscribeStreamChunk = window.api.agent.onStreamChunk((data: { chunk: string; sessionId?: string }) => {
+      const activeSessionId = currentSessionIdRef.current
+      if (data.sessionId && data.sessionId !== activeSessionId) {
+        return // 非当前会话的消息
+      }
+      // 使用函数式更新，在更新 state 的同时同步更新 ref
+      setStreamingContent((prev) => {
+        const newContent = prev + data.chunk
+        streamingContentRef.current = newContent
+        return newContent
+      })
+      setIsStreaming(true)
+    })
+
+    // 监听流式结束
+    const unsubscribeStreamDone = window.api.agent.onStreamDone((data: { sessionId?: string }) => {
+      const activeSessionId = currentSessionIdRef.current
+      if (data.sessionId && data.sessionId !== activeSessionId) {
+        return
+      }
+      setIsStreaming(false)
+      // 流式结束，将累积的内容保存为消息
+      const finalContent = streamingContentRef.current
+      if (finalContent) {
+        const newMessage: Message = {
+          id: `stream-${Date.now()}`,
+          role: 'assistant',
+          content: finalContent,
+          timestamp: Date.now(),
+          sessionId: activeSessionId || undefined
+        }
+        setMessages((prev) => [...prev, newMessage])
+        // 更新会话消息计数
+        if (activeSessionId) {
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === activeSessionId
+                ? { ...s, messageCount: s.messageCount + 1, updatedAt: Date.now() }
+                : s
+            )
+          )
+        }
+        // 清空流式内容
+        setStreamingContent('')
+        streamingContentRef.current = ''
+      }
+    })
+
     const unsubscribeHistoryCleared = window.api.agent.onHistoryCleared(() => {
       setMessages([])
+      setStreamingContent('')
     })
 
     // 监听会话列表更新
@@ -193,6 +291,8 @@ function App(): JSX.Element {
       unsubscribeProcessing()
       unsubscribeToolStart()
       unsubscribeToolResult()
+      unsubscribeStreamChunk()
+      unsubscribeStreamDone()
       unsubscribeHistoryCleared()
       unsubscribeSessionsUpdated()
       unsubscribeSessionSwitched()
@@ -257,6 +357,11 @@ function App(): JSX.Element {
     if (result.success) {
       setCurrentSessionId(sessionId)
       currentSessionIdRef.current = sessionId
+
+      // 重置流式状态，避免跨会话污染
+      setStreamingContent('')
+      streamingContentRef.current = ''
+      setIsStreaming(false)
 
       // 清零未读计数
       setSessions((prev) =>
@@ -330,6 +435,8 @@ function App(): JSX.Element {
     console.log('[App] clearHistory result:', result)
     if (result.success) {
       setMessages([])
+      setStreamingContent('')
+      streamingContentRef.current = ''
       console.log('[App] Messages cleared locally')
     } else {
       console.error('[App] Failed to clear history:', result.error)
@@ -452,6 +559,8 @@ function App(): JSX.Element {
           <ChatPanel
             messages={messages}
             isProcessing={isProcessing}
+            streamingContent={streamingContent}
+            isStreaming={isStreaming}
             onSendMessage={handleSendMessage}
             onClearHistory={handleClearHistory}
           />

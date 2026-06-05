@@ -36,6 +36,10 @@ export interface AgentAPI {
   renameSession: (sessionId: string, title: string) => Promise<{ success: boolean; error?: string }>
   /** 监听新消息 */
   onMessage: (callback: (message: Message) => void) => () => void
+  /** 监听流式消息块（SSE 逐字输出） */
+  onStreamChunk: (callback: (data: { chunk: string; sessionId?: string }) => void) => () => void
+  /** 监听流式结束 */
+  onStreamDone: (callback: (data: { sessionId?: string }) => void) => () => void
   /** 监听处理状态 */
   onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => () => void
   /** 监听工具开始执行 */

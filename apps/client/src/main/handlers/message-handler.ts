@@ -62,8 +62,31 @@ function handleConnectAck() {
 }
 
 function handleStreamChunk(message: any, mainWindow: BrowserWindow | null) {
-  console.log(`[Main] Forwarding stream.chunk for session ${message.sessionId}`)
-  
+  console.log(`[Main] Forwarding stream.chunk for session ${message.sessionId}`, message.payload?.type)
+
+  // 处理 SSE 格式流式消息
+  if (message.payload?.type === 'sse') {
+    const { event, data } = message.payload
+
+    if (event === 'content') {
+      // 逐字内容 - 使用专门的流式事件
+      mainWindow?.webContents.send('agent:stream_chunk', {
+        chunk: data,
+        sessionId: message.sessionId
+      })
+      return
+    }
+
+    if (event === 'done') {
+      // 流式结束
+      mainWindow?.webContents.send('agent:stream_done', {
+        sessionId: message.sessionId
+      })
+      return
+    }
+  }
+
+  // 兼容旧格式（非 SSE）
   mainWindow?.webContents.send('agent:message', {
     id: message.messageId || generateId(),
     role: 'assistant',
