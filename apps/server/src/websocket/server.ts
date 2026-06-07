@@ -9,6 +9,7 @@ import type { WSConnection, WSMessage, MessageType } from '../types/index.js'
 import { SessionManager } from '../services/agent/session.js'
 import { EventBus } from './event-bus.js'
 import { RateLimiter } from '../services/rate-limiter.js'
+import { mcpHub } from '../services/mcp/hub.js'
 import { log } from '@auto-agent/shared-utils'
 
 export class WebSocketGateway {
@@ -241,6 +242,8 @@ export class WebSocketGateway {
       if (agentLoop) {
         this.eventBus.bindAgentLoop(agentLoop, session.id)
       }
+      // 绑定 WebSocket 到 MCPHub（用于该会话的 MCP 工具调用）
+      mcpHub.bindWebSocket(session.id, userId, conn)
     }
 
     log.success('WebSocket', `User ${userId} authenticated, connection ${connectionId}, registered ${sessions.length} sessions`)
@@ -285,6 +288,14 @@ export class WebSocketGateway {
           await this.handleToolError(connection, message)
           break
 
+        case 'mcp.response':
+          this.handleMCPResponse(connection, message)
+          break
+
+        case 'mcp.error':
+          this.handleMCPError(connection, message)
+          break
+
         case 'ping':
           this.sendToConnection(connection.id, {
             type: 'pong' as MessageType,
@@ -324,6 +335,9 @@ export class WebSocketGateway {
     if (agentLoop) {
       this.eventBus.bindAgentLoop(agentLoop, session.id)
     }
+
+    // 绑定 WebSocket 到 MCPHub（用于该会话的 MCP 工具调用）
+    mcpHub.bindWebSocket(session.id, connection.userId, connection)
 
     this.sendToConnection(connection.id, {
       type: 'session.create_ack' as MessageType,
@@ -493,6 +507,38 @@ export class WebSocketGateway {
   }
 
   /**
+   * 处理 MCP 响应（Client 返回的 MCP 工具执行结果）
+   */
+  private handleMCPResponse(connection: WSConnection, message: WSMessage): void {
+    const { sessionId, messageId, payload } = message
+
+    if (!sessionId || !messageId) {
+      log.warn('WebSocket', 'MCP response missing sessionId or messageId')
+      return
+    }
+
+    // 转发给 MCPHub 处理
+    mcpHub.handleResponse(sessionId, messageId, payload?.result)
+    log.debug('WebSocket', `MCP response forwarded to MCPHub`, { sessionId, messageId })
+  }
+
+  /**
+   * 处理 MCP 错误（Client 返回的 MCP 工具执行错误）
+   */
+  private handleMCPError(connection: WSConnection, message: WSMessage): void {
+    const { sessionId, messageId, payload } = message
+
+    if (!sessionId || !messageId) {
+      log.warn('WebSocket', 'MCP error missing sessionId or messageId')
+      return
+    }
+
+    // 转发给 MCPHub 处理
+    mcpHub.handleError(sessionId, messageId, payload?.error || 'Unknown MCP error')
+    log.debug('WebSocket', `MCP error forwarded to MCPHub`, { sessionId, messageId })
+  }
+
+  /**
    * 发送消息到指定连接
    */
   sendToConnection(connectionId: string, message: WSMessage): void {
@@ -525,6 +571,15 @@ export class WebSocketGateway {
       this.eventBus.unregisterConnection(conn.userId, connectionId)
       this.userConnections.get(conn.userId)?.delete(connectionId)
       this.connections.delete(connectionId)
+
+      // 清理该用户所有会话的 MCP 状态
+      const sessions = this.sessionManager.getUserSessions(conn.userId)
+      for (const session of sessions) {
+        mcpHub.cleanupSession(session.id).catch(err => {
+          log.warn('WebSocket', `Failed to cleanup MCP for session ${session.id}`, err)
+        })
+      }
+
       log.info('WebSocket', `Connection ${connectionId} removed`)
     }
   }

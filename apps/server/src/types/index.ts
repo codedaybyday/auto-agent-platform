@@ -111,7 +111,13 @@ export enum MessageType {
 
   // 状态同步
   STATE_SYNC = 'state.sync',
-  STATE_UPDATE = 'state.update'
+  STATE_UPDATE = 'state.update',
+
+  // MCP 桥接
+  MCP_LIST_TOOLS = 'mcp.listTools',
+  MCP_CALL_TOOL = 'mcp.callTool',
+  MCP_RESPONSE = 'mcp.response',
+  MCP_ERROR = 'mcp.error'
 }
 
 export interface WSMessage {

@@ -302,7 +302,7 @@ function App(): JSX.Element {
 
     const unsubscribeHistoryCleared = window.api.agent.onHistoryCleared(() => {
       setMessages([])
-      setStreamingContent('')
+      setStreamingContentMap(new Map())
     })
 
     // 监听会话列表更新

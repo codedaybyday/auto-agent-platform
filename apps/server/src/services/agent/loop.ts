@@ -13,9 +13,9 @@ import type {
   LLMResponse,
   AgentError
 } from '../../types/index.js'
-import { ToolBridge } from './bridge.js'
 import { LLMClient, LLMAPIError } from '../llm/client.js'
 import { ShortTermMemory } from '../memory/short-term.js'
+import { MCPToolBridge } from '../mcp/tool-bridge.js'
 import { log } from '@auto-agent/shared-utils'
 
 export interface AgentLoopEvents {
@@ -32,7 +32,7 @@ export interface AgentLoopEvents {
 export class AgentLoop extends EventEmitter {
   private state: LoopState
   private config: AgentLoopConfig
-  private toolBridge: ToolBridge
+  private toolBridge: MCPToolBridge
   private llmClient: LLMClient
   private userId: string
   private wsClient: any = null
@@ -58,7 +58,7 @@ export class AgentLoop extends EventEmitter {
       systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
     }
     this.llmClient = new LLMClient({ model: this.config.model, baseURL: config.baseURL}, undefined)
-    this.toolBridge = new ToolBridge(sessionId, userId, this.llmClient)
+    this.toolBridge = new MCPToolBridge({ sessionId, userId })
 
     // 初始化短期记忆（Tier 1 + Tier 2）
     this.shortTermMemory = new ShortTermMemory({
@@ -84,8 +84,19 @@ export class AgentLoop extends EventEmitter {
     log.info('AgentLoop', '========== 开始新任务 ==========')
     log.info('AgentLoop', `输入: ${userInput.substring(0, 100)}${userInput.length > 100 ? '...' : ''}`)
     log.info('AgentLoop', `会话ID: ${this.state.sessionId}`)
+    log.info('AgentLoop', `用户ID: ${this.userId}`)
     log.info('AgentLoop', `模型: ${this.config.model}`)
     log.info('AgentLoop', `是否本地模型: ${this.llmClient.isLocal}`)
+
+    // 初始化 MCP 连接（如果是该用户的第一个会话）
+    try {
+      await this.toolBridge.initialize()
+    } catch (error) {
+      log.error('AgentLoop', 'Failed to initialize MCP connection:', error)
+      this.state.status = 'error'
+      this.emit('run_error', { error: new Error('MCP 连接初始化失败'), timestamp: Date.now() })
+      throw error
+    }
 
     // 初始化
     this.state.status = 'running'
@@ -329,7 +340,7 @@ export class AgentLoop extends EventEmitter {
    */
   bindWebSocket(wsClient: any): void {
     this.wsClient = wsClient
-    this.toolBridge.bindWebSocket(wsClient)
+    // WebSocket 已在 MCPHub 中绑定，这里只需保存引用
   }
 
   private getDefaultSystemPrompt(): string {
@@ -394,6 +405,10 @@ export class AgentLoop extends EventEmitter {
   private async callLLM(messages: Message[], useStream: boolean = true): Promise<LLMResponse> {
     log.debug('AgentLoop', `调用 LLM，消息数: ${messages.length}`, { totalMessages: messages.length, useStream })
 
+    // 获取可用工具列表（从 MCP ToolBridge - 异步）
+    const tools = await this.toolBridge.getAvailableTools()
+    log.debug('AgentLoop', `可用工具: ${tools.length} 个`, tools.map(t => t.name))
+
     let response: LLMResponse
 
     if (useStream) {
@@ -420,7 +435,8 @@ export class AgentLoop extends EventEmitter {
             accumulatedToolCalls.push(toolCallDelta)
           }
         },
-        this.userId
+        this.userId,
+        tools
       )
 
       // 发送 SSE 结束标记
@@ -440,7 +456,7 @@ export class AgentLoop extends EventEmitter {
       }
     } else {
       // 非流式模式 - 一次性获取完整响应
-      response = await this.llmClient.chat(messages, this.userId)
+      response = await this.llmClient.chat(messages, this.userId, { tools })
     }
 
     // 添加助手消息到历史

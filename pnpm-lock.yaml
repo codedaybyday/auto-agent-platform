@@ -26,12 +26,18 @@ importers:
       '@auto-agent/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
+      '@auto-agent/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       '@electron-toolkit/preload':
         specifier: ^2.0.0
         version: 2.0.0(electron@33.4.11)
       '@electron-toolkit/utils':
         specifier: ^2.0.1
         version: 2.0.1(electron@33.4.11)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@mtfe/sso-web-oidc-cli':
         specifier: ^1.4.1
         version: 1.4.1(encoding@0.1.13)
@@ -47,6 +53,9 @@ importers:
       ws:
         specifier: ^8.17.0
         version: 8.20.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@electron-toolkit/tsconfig':
         specifier: ^1.0.1
@@ -114,6 +123,9 @@ importers:
       '@auto-agent/shared-utils':
         specifier: workspace:*
         version: link:../../packages/shared-utils
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       cors:
         specifier: ^2.8.5
         version: 2.8.6
@@ -126,6 +138,9 @@ importers:
       ws:
         specifier: ^8.17.0
         version: 8.20.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/cors':
         specifier: ^2.8.0
@@ -618,6 +633,12 @@ packages:
     resolution: {integrity: sha1-3mM9s+wu9qPIni8ZA4Bj6KEi4sI=, tarball: http://r.npm.sankuai.com/@eslint/js/download/@eslint/js-8.57.1.tgz}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
+  '@hono/node-server@1.19.14':
+    resolution: {integrity: sha1-4w+ES8d+POe+RCqsOx9zrYtY0YE=, tarball: http://r.npm.sankuai.com/@hono/node-server/download/@hono/node-server-1.19.14.tgz}
+    engines: {node: '>=18.14.1'}
+    peerDependencies:
+      hono: ^4
+
   '@humanwhocodes/config-array@0.13.0':
     resolution: {integrity: sha1-+5B2JN8yVtBLmqLfUNeql+xkh0g=, tarball: http://r.npm.sankuai.com/@humanwhocodes/config-array/download/@humanwhocodes/config-array-0.13.0.tgz}
     engines: {node: '>=10.10.0'}
@@ -657,6 +678,16 @@ packages:
   '@malept/flatpak-bundler@0.4.0':
     resolution: {integrity: sha1-6KMsMKldIMKxu2NcxYCYGgY4mFg=, tarball: http://r.npm.sankuai.com/@malept/flatpak-bundler/download/@malept/flatpak-bundler-0.4.0.tgz}
     engines: {node: '>= 10.0.0'}
+
+  '@modelcontextprotocol/sdk@1.29.0':
+    resolution: {integrity: sha1-eXhti1JeJp3oUKyCsfH3V/ORX0Q=, tarball: http://r.npm.sankuai.com/@modelcontextprotocol/sdk/download/@modelcontextprotocol/sdk-1.29.0.tgz}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@cfworker/json-schema': ^4.1.1
+      zod: ^3.25 || ^4.0
+    peerDependenciesMeta:
+      '@cfworker/json-schema':
+        optional: true
 
   '@mtfe/sso-web-oidc-base@1.3.5':
     resolution: {integrity: sha1-UaDW4iZ5bf7v/n4gL0/jN7WOWUM=, tarball: http://r.npm.sankuai.com/@mtfe/sso-web-oidc-base/download/@mtfe/sso-web-oidc-base-1.3.5.tgz}
@@ -1052,6 +1083,10 @@ packages:
     resolution: {integrity: sha1-C/C+EltnAUrcsLCSHmLbe//hay4=, tarball: http://r.npm.sankuai.com/accepts/download/accepts-1.3.8.tgz}
     engines: {node: '>= 0.6'}
 
+  accepts@2.0.0:
+    resolution: {integrity: sha1-u89LpQdUZ/PyEx6rPP/HPC9deJU=, tarball: http://r.npm.sankuai.com/accepts/download/accepts-2.0.0.tgz}
+    engines: {node: '>= 0.6'}
+
   acorn-jsx@5.3.2:
     resolution: {integrity: sha1-ftW7VZCLOy8bxVxq8WU7rafweTc=, tarball: http://r.npm.sankuai.com/acorn-jsx/download/acorn-jsx-5.3.2.tgz}
     peerDependencies:
@@ -1066,6 +1101,14 @@ packages:
     resolution: {integrity: sha1-Sf/1hXfP7j83F2/qtMIuAPhtf3c=, tarball: http://r.npm.sankuai.com/agent-base/download/agent-base-6.0.2.tgz}
     engines: {node: '>= 6.0.0'}
 
+  ajv-formats@3.0.1:
+    resolution: {integrity: sha1-PV3HYryhdnnDwup+kK1rdTIwlXg=, tarball: http://r.npm.sankuai.com/ajv-formats/download/ajv-formats-3.0.1.tgz}
+    peerDependencies:
+      ajv: ^8.0.0
+    peerDependenciesMeta:
+      ajv:
+        optional: true
+
   ajv-keywords@3.5.2:
     resolution: {integrity: sha1-MfKdpatuANHC0yms97WSlhTVAU0=, tarball: http://r.npm.sankuai.com/ajv-keywords/download/ajv-keywords-3.5.2.tgz}
     peerDependencies:
@@ -1073,6 +1116,9 @@ packages:
 
   ajv@6.15.0:
     resolution: {integrity: sha1-B+mCx0YmFnqnoklcU4F4ktcTlJI=, tarball: http://r.npm.sankuai.com/ajv/download/ajv-6.15.0.tgz}
+
+  ajv@8.20.0:
+    resolution: {integrity: sha1-MEs2Nq3Yi6fZNnYN1Q7OAG3qlfk=, tarball: http://r.npm.sankuai.com/ajv/download/ajv-8.20.0.tgz}
 
   ansi-regex@5.0.1:
     resolution: {integrity: sha1-CCyyyJyf6GWaMRpTvWpNxTAdswQ=, tarball: http://r.npm.sankuai.com/ansi-regex/download/ansi-regex-5.0.1.tgz}
@@ -1209,6 +1255,10 @@ packages:
   body-parser@1.20.5:
     resolution: {integrity: sha1-MDyMNEI9HW+nmbx2TpPB5Nxuv2Q=, tarball: http://r.npm.sankuai.com/body-parser/download/body-parser-1.20.5.tgz}
     engines: {node: '>= 0.8', npm: 1.2.8000 || >= 1.4.16}
+
+  body-parser@2.2.2:
+    resolution: {integrity: sha1-GjLNuWa+r2jeUKnfvltY+Dy4iQw=, tarball: http://r.npm.sankuai.com/body-parser/download/body-parser-2.2.2.tgz}
+    engines: {node: '>=18'}
 
   boolean@3.2.0:
     resolution: {integrity: sha1-nlKUr06YMUSUy7F5efpUyhWfEWs=, tarball: http://r.npm.sankuai.com/boolean/download/boolean-3.2.0.tgz}
@@ -1382,15 +1432,27 @@ packages:
     resolution: {integrity: sha1-i4K076yCUSoCuwsdzsnSxejrW/4=, tarball: http://r.npm.sankuai.com/content-disposition/download/content-disposition-0.5.4.tgz}
     engines: {node: '>= 0.6'}
 
+  content-disposition@1.1.0:
+    resolution: {integrity: sha1-89t4nHUtRVZMx+nh4LMXkNSjjhc=, tarball: http://r.npm.sankuai.com/content-disposition/download/content-disposition-1.1.0.tgz}
+    engines: {node: '>=18'}
+
   content-type@1.0.5:
     resolution: {integrity: sha1-i3cxYmVtHRCGeEyPI6VM5tc9eRg=, tarball: http://r.npm.sankuai.com/content-type/download/content-type-1.0.5.tgz}
     engines: {node: '>= 0.6'}
+
+  content-type@2.0.0:
+    resolution: {integrity: sha1-L7Pt5p3/oK94ynxM51iWgGOLVt8=, tarball: http://r.npm.sankuai.com/content-type/download/content-type-2.0.0.tgz}
+    engines: {node: '>=18'}
 
   convert-source-map@2.0.0:
     resolution: {integrity: sha1-S1YPZJ/E6RjdCrdc9JYei8iC2Co=, tarball: http://r.npm.sankuai.com/convert-source-map/download/convert-source-map-2.0.0.tgz}
 
   cookie-signature@1.0.7:
     resolution: {integrity: sha1-q13Xq3V8VOYPN+9lUPSBxCbRBFQ=, tarball: http://r.npm.sankuai.com/cookie-signature/download/cookie-signature-1.0.7.tgz}
+
+  cookie-signature@1.2.2:
+    resolution: {integrity: sha1-V8f8PMKTrKuf7FTXPhVpDr5KF5M=, tarball: http://r.npm.sankuai.com/cookie-signature/download/cookie-signature-1.2.2.tgz}
+    engines: {node: '>=6.6.0'}
 
   cookie@0.7.2:
     resolution: {integrity: sha1-VWNpxHKiupEPKXmJG1JrNDYjftc=, tarball: http://r.npm.sankuai.com/cookie/download/cookie-0.7.2.tgz}
@@ -1731,9 +1793,27 @@ packages:
     resolution: {integrity: sha1-Qa4u62XvpiJorr/qg6x9eSmbCIc=, tarball: http://r.npm.sankuai.com/etag/download/etag-1.8.1.tgz}
     engines: {node: '>= 0.6'}
 
+  eventsource-parser@3.1.0:
+    resolution: {integrity: sha1-ThmOuRzTM9Co3cwDZQKzYYol9Ek=, tarball: http://r.npm.sankuai.com/eventsource-parser/download/eventsource-parser-3.1.0.tgz}
+    engines: {node: '>=18.0.0'}
+
+  eventsource@3.0.7:
+    resolution: {integrity: sha1-EVdiLi9Td7tq7yEUNycougwVaYk=, tarball: http://r.npm.sankuai.com/eventsource/download/eventsource-3.0.7.tgz}
+    engines: {node: '>=18.0.0'}
+
+  express-rate-limit@8.5.2:
+    resolution: {integrity: sha1-WSLb923yEkYRzqlV2TQys3UUsvM=, tarball: http://r.npm.sankuai.com/express-rate-limit/download/express-rate-limit-8.5.2.tgz}
+    engines: {node: '>= 16'}
+    peerDependencies:
+      express: '>= 4.11'
+
   express@4.22.2:
     resolution: {integrity: sha1-wXrgmB5e/CSyInLw4EHEZiUDtwA=, tarball: http://r.npm.sankuai.com/express/download/express-4.22.2.tgz}
     engines: {node: '>= 0.10.0'}
+
+  express@5.2.1:
+    resolution: {integrity: sha1-jyHRW20yf5K0eU7PjLCKcvlWrAQ=, tarball: http://r.npm.sankuai.com/express/download/express-5.2.1.tgz}
+    engines: {node: '>= 18'}
 
   extend@3.0.2:
     resolution: {integrity: sha1-+LETa0Bx+9jrFAr/hYsQGewpFfo=, tarball: http://r.npm.sankuai.com/extend/download/extend-3.0.2.tgz}
@@ -1759,6 +1839,9 @@ packages:
 
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha1-PYpcZog6FqMMqGQ+hR8Zuqd5eRc=, tarball: http://r.npm.sankuai.com/fast-levenshtein/download/fast-levenshtein-2.0.6.tgz}
+
+  fast-uri@3.1.2:
+    resolution: {integrity: sha1-ivPU/J0+cbEVcswmc7UUp9GoyOw=, tarball: http://r.npm.sankuai.com/fast-uri/download/fast-uri-3.1.2.tgz}
 
   fastq@1.20.1:
     resolution: {integrity: sha1-ynUKENySW8ixiDn9ID4+9LPO1nU=, tarball: http://r.npm.sankuai.com/fastq/download/fastq-1.20.1.tgz}
@@ -1794,6 +1877,10 @@ packages:
     resolution: {integrity: sha1-HrwiKPx2c6rEpHLDEMwFt32FK4g=, tarball: http://r.npm.sankuai.com/finalhandler/download/finalhandler-1.3.2.tgz}
     engines: {node: '>= 0.8'}
 
+  finalhandler@2.1.1:
+    resolution: {integrity: sha1-osUXplWYUrzbBtH4vX9Rto+tgJk=, tarball: http://r.npm.sankuai.com/finalhandler/download/finalhandler-2.1.1.tgz}
+    engines: {node: '>= 18.0.0'}
+
   find-up@5.0.0:
     resolution: {integrity: sha1-TJKBnstwg1YeT0okCoa+UZj1Nvw=, tarball: http://r.npm.sankuai.com/find-up/download/find-up-5.0.0.tgz}
     engines: {node: '>=10'}
@@ -1827,6 +1914,10 @@ packages:
   fresh@0.5.2:
     resolution: {integrity: sha1-PYyt2Q2XZWn6g1qx+OSyOhBWBac=, tarball: http://r.npm.sankuai.com/fresh/download/fresh-0.5.2.tgz}
     engines: {node: '>= 0.6'}
+
+  fresh@2.0.0:
+    resolution: {integrity: sha1-jdffahs6Gzpc8YbAWl3SZ2ImNaQ=, tarball: http://r.npm.sankuai.com/fresh/download/fresh-2.0.0.tgz}
+    engines: {node: '>= 0.8'}
 
   fs-constants@1.0.0:
     resolution: {integrity: sha1-a+Dem+mYzhavivwkSXue6bfM2a0=, tarball: http://r.npm.sankuai.com/fs-constants/download/fs-constants-1.0.0.tgz}
@@ -1980,6 +2071,10 @@ packages:
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha1-d3jtnTyS3Z6MXI9kiknCH8UctiE=, tarball: http://r.npm.sankuai.com/hast-util-whitespace/download/hast-util-whitespace-3.0.0.tgz}
 
+  hono@4.12.23:
+    resolution: {integrity: sha1-mYuRZRaGFJ8Obtu4Vk1gTaBPPPg=, tarball: http://r.npm.sankuai.com/hono/download/hono-4.12.23.tgz}
+    engines: {node: '>=16.9.0'}
+
   hosted-git-info@4.1.0:
     resolution: {integrity: sha1-gnuChn6f8cjQxNnVOIA5fSyG0iQ=, tarball: http://r.npm.sankuai.com/hosted-git-info/download/hosted-git-info-4.1.0.tgz}
     engines: {node: '>=10'}
@@ -2019,6 +2114,10 @@ packages:
     resolution: {integrity: sha1-pS+AvzjaGVLrXGgXkHGYcaGnJQE=, tarball: http://r.npm.sankuai.com/iconv-lite/download/iconv-lite-0.6.3.tgz}
     engines: {node: '>=0.10.0'}
 
+  iconv-lite@0.7.2:
+    resolution: {integrity: sha1-0L3qw/ErSDW3NZwq2JxCKk0cxy4=, tarball: http://r.npm.sankuai.com/iconv-lite/download/iconv-lite-0.7.2.tgz}
+    engines: {node: '>=0.10.0'}
+
   ieee754@1.2.1:
     resolution: {integrity: sha1-jrehCmP/8l0VpXsAFYbRd9Gw01I=, tarball: http://r.npm.sankuai.com/ieee754/download/ieee754-1.2.1.tgz}
 
@@ -2047,6 +2146,10 @@ packages:
   internal-slot@1.1.0:
     resolution: {integrity: sha1-HqyRdilH0vcFa8g42T4TsulgSWE=, tarball: http://r.npm.sankuai.com/internal-slot/download/internal-slot-1.1.0.tgz}
     engines: {node: '>= 0.4'}
+
+  ip-address@10.2.0:
+    resolution: {integrity: sha1-gF/BeLIMUYvUyFSLJP4wiS1/MgY=, tarball: http://r.npm.sankuai.com/ip-address/download/ip-address-10.2.0.tgz}
+    engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
     resolution: {integrity: sha1-v/OFQ+64mEglB5/zoqjmy9RngbM=, tarball: https://r.npm.sankuai.com/ipaddr.js/download/ipaddr.js-1.9.1.tgz}
@@ -2149,6 +2252,9 @@ packages:
     resolution: {integrity: sha1-1lAl7ew2V84DL9fbY8l4g+rtcfA=, tarball: http://r.npm.sankuai.com/is-plain-obj/download/is-plain-obj-4.1.0.tgz}
     engines: {node: '>=12'}
 
+  is-promise@4.0.0:
+    resolution: {integrity: sha1-Qv+fhCBsGZHSbev1IN1cAQQt0vM=, tarball: http://r.npm.sankuai.com/is-promise/download/is-promise-4.0.0.tgz}
+
   is-regex@1.2.1:
     resolution: {integrity: sha1-dtcKPtEO+b5I61d4h9dCBb8MrSI=, tarball: http://r.npm.sankuai.com/is-regex/download/is-regex-1.2.1.tgz}
     engines: {node: '>= 0.4'}
@@ -2218,6 +2324,9 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
+  jose@6.2.3:
+    resolution: {integrity: sha1-CXUZetlzJRIhxlijzdxLlRolDC0=, tarball: http://r.npm.sankuai.com/jose/download/jose-6.2.3.tgz}
+
   joycon@3.1.1:
     resolution: {integrity: sha1-vOhZbWroCPi2gWj1/GkoCZaJTwM=, tarball: http://r.npm.sankuai.com/joycon/download/joycon-3.1.1.tgz}
     engines: {node: '>=10'}
@@ -2239,6 +2348,12 @@ packages:
 
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha1-afaofZUTq4u4/mO9sJecRI5oRmA=, tarball: http://r.npm.sankuai.com/json-schema-traverse/download/json-schema-traverse-0.4.1.tgz}
+
+  json-schema-traverse@1.0.0:
+    resolution: {integrity: sha1-rnvLNlard6c7pcSb9lTzjmtoYOI=, tarball: http://r.npm.sankuai.com/json-schema-traverse/download/json-schema-traverse-1.0.0.tgz}
+
+  json-schema-typed@8.0.2:
+    resolution: {integrity: sha1-6Y7nsYmf9KGEU00fFnwojGa77/Q=, tarball: http://r.npm.sankuai.com/json-schema-typed/download/json-schema-typed-8.0.2.tgz}
 
   json-stable-stringify-without-jsonify@1.0.1:
     resolution: {integrity: sha1-nbe1lJatPzz+8wp1FC0tkwrXJlE=, tarball: http://r.npm.sankuai.com/json-stable-stringify-without-jsonify/download/json-stable-stringify-without-jsonify-1.0.1.tgz}
@@ -2395,8 +2510,16 @@ packages:
     resolution: {integrity: sha1-hxDXrwqmJvj/+hzgAWhUUmMlV0g=, tarball: https://r.npm.sankuai.com/media-typer/download/media-typer-0.3.0.tgz}
     engines: {node: '>= 0.6'}
 
+  media-typer@1.1.0:
+    resolution: {integrity: sha1-ardLjy0zIPIGSyqHo455Mf86VWE=, tarball: http://r.npm.sankuai.com/media-typer/download/media-typer-1.1.0.tgz}
+    engines: {node: '>= 0.8'}
+
   merge-descriptors@1.0.3:
     resolution: {integrity: sha1-2AMZpl88eTU1Hlz9rI+TGFBNvtU=, tarball: https://r.npm.sankuai.com/merge-descriptors/download/merge-descriptors-1.0.3.tgz}
+
+  merge-descriptors@2.0.0:
+    resolution: {integrity: sha1-6pIvZgY1oiSe5WXgRJ+VHmtgOAg=, tarball: http://r.npm.sankuai.com/merge-descriptors/download/merge-descriptors-2.0.0.tgz}
+    engines: {node: '>=18'}
 
   merge2@1.4.1:
     resolution: {integrity: sha1-Q2iJL4hekHRVpv19xVwMnUBJkK4=, tarball: http://r.npm.sankuai.com/merge2/download/merge2-1.4.1.tgz}
@@ -2498,9 +2621,17 @@ packages:
     resolution: {integrity: sha1-u6vNwChZ9JhzAchW4zh85exDv3A=, tarball: https://r.npm.sankuai.com/mime-db/download/mime-db-1.52.0.tgz}
     engines: {node: '>= 0.6'}
 
+  mime-db@1.54.0:
+    resolution: {integrity: sha1-zds+5PnGRTDf9kAjZmHULLajFPU=, tarball: http://r.npm.sankuai.com/mime-db/download/mime-db-1.54.0.tgz}
+    engines: {node: '>= 0.6'}
+
   mime-types@2.1.35:
     resolution: {integrity: sha1-OBqHG2KnNEUGYK497uRIE/cNlZo=, tarball: http://r.npm.sankuai.com/mime-types/download/mime-types-2.1.35.tgz}
     engines: {node: '>= 0.6'}
+
+  mime-types@3.0.2:
+    resolution: {integrity: sha1-OQAtQYJXXVrwNv+hGBAPJSSy4qs=, tarball: http://r.npm.sankuai.com/mime-types/download/mime-types-3.0.2.tgz}
+    engines: {node: '>=18'}
 
   mime@1.6.0:
     resolution: {integrity: sha1-Ms2eXGRVO9WNGaVor0Uqz/BJgbE=, tarball: https://r.npm.sankuai.com/mime/download/mime-1.6.0.tgz}
@@ -2577,6 +2708,10 @@ packages:
 
   negotiator@0.6.3:
     resolution: {integrity: sha1-WOMjpy/twNb5zU0x/kn1FHlZDM0=, tarball: https://r.npm.sankuai.com/negotiator/download/negotiator-0.6.3.tgz}
+    engines: {node: '>= 0.6'}
+
+  negotiator@1.0.0:
+    resolution: {integrity: sha1-tskbtHFy1p+Tz9fDV7u1KQGbX2o=, tarball: http://r.npm.sankuai.com/negotiator/download/negotiator-1.0.0.tgz}
     engines: {node: '>= 0.6'}
 
   node-addon-api@1.7.2:
@@ -2701,6 +2836,9 @@ packages:
   path-to-regexp@0.1.13:
     resolution: {integrity: sha1-myLsFrw6uI0FoMfjaYaUIUAasX0=, tarball: http://r.npm.sankuai.com/path-to-regexp/download/path-to-regexp-0.1.13.tgz}
 
+  path-to-regexp@8.4.2:
+    resolution: {integrity: sha1-eVxCDE98pFxbiHNm9iLuDJhSzM0=, tarball: http://r.npm.sankuai.com/path-to-regexp/download/path-to-regexp-8.4.2.tgz}
+
   path-type@4.0.0:
     resolution: {integrity: sha1-hO0BwKe6OAr+CdkKjBgNzZ0DBDs=, tarball: http://r.npm.sankuai.com/path-type/download/path-type-4.0.0.tgz}
     engines: {node: '>=8'}
@@ -2725,6 +2863,10 @@ packages:
   pirates@4.0.7:
     resolution: {integrity: sha1-ZDtKGMQlfIplEEtz8wSc6aChXiI=, tarball: http://r.npm.sankuai.com/pirates/download/pirates-4.0.7.tgz}
     engines: {node: '>= 6'}
+
+  pkce-challenge@5.0.1:
+    resolution: {integrity: sha1-O0RGhlsXsXRems4gFqMfSN32Iw0=, tarball: http://r.npm.sankuai.com/pkce-challenge/download/pkce-challenge-5.0.1.tgz}
+    engines: {node: '>=16.20.0'}
 
   pkg-types@1.3.1:
     resolution: {integrity: sha1-vXzHCIEZJ3fu9TJsGd60bokJF98=, tarball: http://r.npm.sankuai.com/pkg-types/download/pkg-types-1.3.1.tgz}
@@ -2832,6 +2974,10 @@ packages:
     resolution: {integrity: sha1-EcZlDudwp94bSU8ZeSfeDJI4IuI=, tarball: http://r.npm.sankuai.com/raw-body/download/raw-body-2.5.3.tgz}
     engines: {node: '>= 0.8'}
 
+  raw-body@3.0.2:
+    resolution: {integrity: sha1-PjraWuVWj5CV2EN2/TpJuPsAClE=, tarball: http://r.npm.sankuai.com/raw-body/download/raw-body-3.0.2.tgz}
+    engines: {node: '>= 0.10'}
+
   react-dom@18.3.1:
     resolution: {integrity: sha1-wiZdeVEbV9R5s90/36UVNklMXLQ=, tarball: http://r.npm.sankuai.com/react-dom/download/react-dom-18.3.1.tgz}
     peerDependencies:
@@ -2896,6 +3042,10 @@ packages:
     resolution: {integrity: sha1-jGStX9MNqxyXbiNE/+f3kqam30I=, tarball: http://r.npm.sankuai.com/require-directory/download/require-directory-2.1.1.tgz}
     engines: {node: '>=0.10.0'}
 
+  require-from-string@2.0.2:
+    resolution: {integrity: sha1-iaf92TgmEmcxjq/hT5wy5ZjDaQk=, tarball: http://r.npm.sankuai.com/require-from-string/download/require-from-string-2.0.2.tgz}
+    engines: {node: '>=0.10.0'}
+
   resolve-alpn@1.2.1:
     resolution: {integrity: sha1-t629rDVGqq7CC0Xn2CZZJwcnJvk=, tarball: http://r.npm.sankuai.com/resolve-alpn/download/resolve-alpn-1.2.1.tgz}
 
@@ -2939,6 +3089,10 @@ packages:
     resolution: {integrity: sha1-eJJY1B0JBofQyn6A6Fg9czcR3dM=, tarball: http://r.npm.sankuai.com/rollup/download/rollup-4.60.3.tgz}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
     hasBin: true
+
+  router@2.2.0:
+    resolution: {integrity: sha1-AZvmILcRyHZBFnzHm5kJDwCxRu8=, tarball: http://r.npm.sankuai.com/router/download/router-2.2.0.tgz}
+    engines: {node: '>= 18'}
 
   run-parallel@1.2.0:
     resolution: {integrity: sha1-ZtE2jae9+SHrnZW9GpIp5/IaQ+4=, tarball: http://r.npm.sankuai.com/run-parallel/download/run-parallel-1.2.0.tgz}
@@ -2990,6 +3144,10 @@ packages:
     resolution: {integrity: sha1-WbwNobTqetQnNv1kKxxClOEU/yk=, tarball: http://r.npm.sankuai.com/send/download/send-0.19.2.tgz}
     engines: {node: '>= 0.8.0'}
 
+  send@1.2.1:
+    resolution: {integrity: sha1-nqt0O4dPNVD0CiaGe/KGrWDT8+0=, tarball: http://r.npm.sankuai.com/send/download/send-1.2.1.tgz}
+    engines: {node: '>= 18'}
+
   serialize-error@7.0.1:
     resolution: {integrity: sha1-8TYLBEf2H/tIPsQVfHN/q313jhg=, tarball: http://r.npm.sankuai.com/serialize-error/download/serialize-error-7.0.1.tgz}
     engines: {node: '>=10'}
@@ -2997,6 +3155,10 @@ packages:
   serve-static@1.16.3:
     resolution: {integrity: sha1-qXt02VV3hYPzhipPC4QetNXXjPk=, tarball: http://r.npm.sankuai.com/serve-static/download/serve-static-1.16.3.tgz}
     engines: {node: '>= 0.8.0'}
+
+  serve-static@2.2.1:
+    resolution: {integrity: sha1-fxhqSk5fW2Y616QpT/G/N88OmKk=, tarball: http://r.npm.sankuai.com/serve-static/download/serve-static-2.2.1.tgz}
+    engines: {node: '>= 18'}
 
   set-function-length@1.2.2:
     resolution: {integrity: sha1-qscjFBmOrtl1z3eyw7a4gGleVEk=, tarball: http://r.npm.sankuai.com/set-function-length/download/set-function-length-1.2.2.tgz}
@@ -3284,6 +3446,10 @@ packages:
     resolution: {integrity: sha1-TlUs0F3wlGfcvE73Od6J8s83wTE=, tarball: http://r.npm.sankuai.com/type-is/download/type-is-1.6.18.tgz}
     engines: {node: '>= 0.6'}
 
+  type-is@2.1.0:
+    resolution: {integrity: sha1-cdGnBTKTWC4WrJ8+uvGrmqSeVXA=, tarball: http://r.npm.sankuai.com/type-is/download/type-is-2.1.0.tgz}
+    engines: {node: '>= 18'}
+
   typed-array-buffer@1.0.3:
     resolution: {integrity: sha1-pyOVRQpIaewDP9VJNxtHrzou5TY=, tarball: http://r.npm.sankuai.com/typed-array-buffer/download/typed-array-buffer-1.0.3.tgz}
     engines: {node: '>= 0.4'}
@@ -3495,6 +3661,14 @@ packages:
   zip-stream@4.1.1:
     resolution: {integrity: sha1-Ezf+l026/9L6mhuglmKmaTK9cTU=, tarball: http://r.npm.sankuai.com/zip-stream/download/zip-stream-4.1.1.tgz}
     engines: {node: '>= 10'}
+
+  zod-to-json-schema@3.25.2:
+    resolution: {integrity: sha1-P6eZp7rdVUVBRy+2WEP9xGCy5ao=, tarball: http://r.npm.sankuai.com/zod-to-json-schema/download/zod-to-json-schema-3.25.2.tgz}
+    peerDependencies:
+      zod: ^3.25.28 || ^4
+
+  zod@4.4.3:
+    resolution: {integrity: sha1-toDxcohdGLvr8hqDTqJeVaG781Y=, tarball: http://r.npm.sankuai.com/zod/download/zod-4.4.3.tgz}
 
   zwitch@2.0.4:
     resolution: {integrity: sha1-yCfUsKy3b8PmhaTG7CkC1RBw6dc=, tarball: http://r.npm.sankuai.com/zwitch/download/zwitch-2.0.4.tgz}
@@ -3858,6 +4032,10 @@ snapshots:
 
   '@eslint/js@8.57.1': {}
 
+  '@hono/node-server@1.19.14(hono@4.12.23)':
+    dependencies:
+      hono: 4.12.23
+
   '@humanwhocodes/config-array@0.13.0':
     dependencies:
       '@humanwhocodes/object-schema': 2.0.3
@@ -3908,6 +4086,28 @@ snapshots:
       fs-extra: 9.1.0
       lodash: 4.18.1
       tmp-promise: 3.0.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@modelcontextprotocol/sdk@1.29.0(zod@4.4.3)':
+    dependencies:
+      '@hono/node-server': 1.19.14(hono@4.12.23)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      express: 5.2.1
+      express-rate-limit: 8.5.2(express@5.2.1)
+      hono: 4.12.23
+      jose: 6.2.3
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
     transitivePeerDependencies:
       - supports-color
 
@@ -4294,6 +4494,11 @@ snapshots:
       mime-types: 2.1.35
       negotiator: 0.6.3
 
+  accepts@2.0.0:
+    dependencies:
+      mime-types: 3.0.2
+      negotiator: 1.0.0
+
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
       acorn: 8.16.0
@@ -4306,6 +4511,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  ajv-formats@3.0.1(ajv@8.20.0):
+    optionalDependencies:
+      ajv: 8.20.0
+
   ajv-keywords@3.5.2(ajv@6.15.0):
     dependencies:
       ajv: 6.15.0
@@ -4316,6 +4525,13 @@ snapshots:
       fast-json-stable-stringify: 2.1.0
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
+
+  ajv@8.20.0:
+    dependencies:
+      fast-deep-equal: 3.1.3
+      fast-uri: 3.1.2
+      json-schema-traverse: 1.0.0
+      require-from-string: 2.0.2
 
   ansi-regex@5.0.1: {}
 
@@ -4521,6 +4737,20 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  body-parser@2.2.2:
+    dependencies:
+      bytes: 3.1.2
+      content-type: 1.0.5
+      debug: 4.4.3
+      http-errors: 2.0.1
+      iconv-lite: 0.7.2
+      on-finished: 2.4.1
+      qs: 6.15.1
+      raw-body: 3.0.2
+      type-is: 2.1.0
+    transitivePeerDependencies:
+      - supports-color
+
   boolean@3.2.0:
     optional: true
 
@@ -4707,11 +4937,17 @@ snapshots:
     dependencies:
       safe-buffer: 5.2.1
 
+  content-disposition@1.1.0: {}
+
   content-type@1.0.5: {}
+
+  content-type@2.0.0: {}
 
   convert-source-map@2.0.0: {}
 
   cookie-signature@1.0.7: {}
+
+  cookie-signature@1.2.2: {}
 
   cookie@0.7.2: {}
 
@@ -5228,6 +5464,17 @@ snapshots:
 
   etag@1.8.1: {}
 
+  eventsource-parser@3.1.0: {}
+
+  eventsource@3.0.7:
+    dependencies:
+      eventsource-parser: 3.1.0
+
+  express-rate-limit@8.5.2(express@5.2.1):
+    dependencies:
+      express: 5.2.1
+      ip-address: 10.2.0
+
   express@4.22.2:
     dependencies:
       accepts: 1.3.8
@@ -5264,6 +5511,39 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  express@5.2.1:
+    dependencies:
+      accepts: 2.0.0
+      body-parser: 2.2.2
+      content-disposition: 1.1.0
+      content-type: 1.0.5
+      cookie: 0.7.2
+      cookie-signature: 1.2.2
+      debug: 4.4.3
+      depd: 2.0.0
+      encodeurl: 2.0.0
+      escape-html: 1.0.3
+      etag: 1.8.1
+      finalhandler: 2.1.1
+      fresh: 2.0.0
+      http-errors: 2.0.1
+      merge-descriptors: 2.0.0
+      mime-types: 3.0.2
+      on-finished: 2.4.1
+      once: 1.4.0
+      parseurl: 1.3.3
+      proxy-addr: 2.0.7
+      qs: 6.15.1
+      range-parser: 1.2.1
+      router: 2.2.0
+      send: 1.2.1
+      serve-static: 2.2.1
+      statuses: 2.0.2
+      type-is: 2.1.0
+      vary: 1.1.2
+    transitivePeerDependencies:
+      - supports-color
+
   extend@3.0.2: {}
 
   extract-zip@2.0.1:
@@ -5292,6 +5572,8 @@ snapshots:
   fast-json-stable-stringify@2.1.0: {}
 
   fast-levenshtein@2.0.6: {}
+
+  fast-uri@3.1.2: {}
 
   fastq@1.20.1:
     dependencies:
@@ -5328,6 +5610,17 @@ snapshots:
       parseurl: 1.3.3
       statuses: 2.0.2
       unpipe: 1.0.0
+    transitivePeerDependencies:
+      - supports-color
+
+  finalhandler@2.1.1:
+    dependencies:
+      debug: 4.4.3
+      encodeurl: 2.0.0
+      escape-html: 1.0.3
+      on-finished: 2.4.1
+      parseurl: 1.3.3
+      statuses: 2.0.2
     transitivePeerDependencies:
       - supports-color
 
@@ -5370,6 +5663,8 @@ snapshots:
   forwarded@0.2.0: {}
 
   fresh@0.5.2: {}
+
+  fresh@2.0.0: {}
 
   fs-constants@1.0.0: {}
 
@@ -5575,6 +5870,8 @@ snapshots:
     dependencies:
       '@types/hast': 3.0.4
 
+  hono@4.12.23: {}
+
   hosted-git-info@4.1.0:
     dependencies:
       lru-cache: 6.0.0
@@ -5625,6 +5922,10 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
+  iconv-lite@0.7.2:
+    dependencies:
+      safer-buffer: 2.1.2
+
   ieee754@1.2.1: {}
 
   ignore@5.3.2: {}
@@ -5650,6 +5951,8 @@ snapshots:
       es-errors: 1.3.0
       hasown: 2.0.3
       side-channel: 1.1.0
+
+  ip-address@10.2.0: {}
 
   ipaddr.js@1.9.1: {}
 
@@ -5745,6 +6048,8 @@ snapshots:
 
   is-plain-obj@4.1.0: {}
 
+  is-promise@4.0.0: {}
+
   is-regex@1.2.1:
     dependencies:
       call-bound: 1.0.4
@@ -5819,6 +6124,8 @@ snapshots:
       filelist: 1.0.6
       picocolors: 1.1.1
 
+  jose@6.2.3: {}
+
   joycon@3.1.1: {}
 
   js-tokens@4.0.0: {}
@@ -5832,6 +6139,10 @@ snapshots:
   json-buffer@3.0.1: {}
 
   json-schema-traverse@0.4.1: {}
+
+  json-schema-traverse@1.0.0: {}
+
+  json-schema-typed@8.0.2: {}
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
@@ -6082,7 +6393,11 @@ snapshots:
 
   media-typer@0.3.0: {}
 
+  media-typer@1.1.0: {}
+
   merge-descriptors@1.0.3: {}
+
+  merge-descriptors@2.0.0: {}
 
   merge2@1.4.1: {}
 
@@ -6286,9 +6601,15 @@ snapshots:
 
   mime-db@1.52.0: {}
 
+  mime-db@1.54.0: {}
+
   mime-types@2.1.35:
     dependencies:
       mime-db: 1.52.0
+
+  mime-types@3.0.2:
+    dependencies:
+      mime-db: 1.54.0
 
   mime@1.6.0: {}
 
@@ -6349,6 +6670,8 @@ snapshots:
   natural-compare@1.4.0: {}
 
   negotiator@0.6.3: {}
+
+  negotiator@1.0.0: {}
 
   node-addon-api@1.7.2:
     optional: true
@@ -6480,6 +6803,8 @@ snapshots:
 
   path-to-regexp@0.1.13: {}
 
+  path-to-regexp@8.4.2: {}
+
   path-type@4.0.0: {}
 
   pathe@2.0.3: {}
@@ -6493,6 +6818,8 @@ snapshots:
   picomatch@4.0.4: {}
 
   pirates@4.0.7: {}
+
+  pkce-challenge@5.0.1: {}
 
   pkg-types@1.3.1:
     dependencies:
@@ -6590,6 +6917,13 @@ snapshots:
       bytes: 3.1.2
       http-errors: 2.0.1
       iconv-lite: 0.4.24
+      unpipe: 1.0.0
+
+  raw-body@3.0.2:
+    dependencies:
+      bytes: 3.1.2
+      http-errors: 2.0.1
+      iconv-lite: 0.7.2
       unpipe: 1.0.0
 
   react-dom@18.3.1(react@18.3.1):
@@ -6711,6 +7045,8 @@ snapshots:
 
   require-directory@2.1.1: {}
 
+  require-from-string@2.0.2: {}
+
   resolve-alpn@1.2.1: {}
 
   resolve-from@4.0.0: {}
@@ -6781,6 +7117,16 @@ snapshots:
       '@rollup/rollup-win32-x64-msvc': 4.60.3
       fsevents: 2.3.3
 
+  router@2.2.0:
+    dependencies:
+      debug: 4.4.3
+      depd: 2.0.0
+      is-promise: 4.0.0
+      parseurl: 1.3.3
+      path-to-regexp: 8.4.2
+    transitivePeerDependencies:
+      - supports-color
+
   run-parallel@1.2.0:
     dependencies:
       queue-microtask: 1.2.3
@@ -6845,6 +7191,22 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  send@1.2.1:
+    dependencies:
+      debug: 4.4.3
+      encodeurl: 2.0.0
+      escape-html: 1.0.3
+      etag: 1.8.1
+      fresh: 2.0.0
+      http-errors: 2.0.1
+      mime-types: 3.0.2
+      ms: 2.1.3
+      on-finished: 2.4.1
+      range-parser: 1.2.1
+      statuses: 2.0.2
+    transitivePeerDependencies:
+      - supports-color
+
   serialize-error@7.0.1:
     dependencies:
       type-fest: 0.13.1
@@ -6856,6 +7218,15 @@ snapshots:
       escape-html: 1.0.3
       parseurl: 1.3.3
       send: 0.19.2
+    transitivePeerDependencies:
+      - supports-color
+
+  serve-static@2.2.1:
+    dependencies:
+      encodeurl: 2.0.0
+      escape-html: 1.0.3
+      parseurl: 1.3.3
+      send: 1.2.1
     transitivePeerDependencies:
       - supports-color
 
@@ -7202,6 +7573,12 @@ snapshots:
       media-typer: 0.3.0
       mime-types: 2.1.35
 
+  type-is@2.1.0:
+    dependencies:
+      content-type: 2.0.0
+      media-typer: 1.1.0
+      mime-types: 3.0.2
+
   typed-array-buffer@1.0.3:
     dependencies:
       call-bound: 1.0.4
@@ -7433,5 +7810,11 @@ snapshots:
       archiver-utils: 3.0.4
       compress-commons: 4.1.2
       readable-stream: 3.6.2
+
+  zod-to-json-schema@3.25.2(zod@4.4.3):
+    dependencies:
+      zod: 4.4.3
+
+  zod@4.4.3: {}
 
   zwitch@2.0.4: {}

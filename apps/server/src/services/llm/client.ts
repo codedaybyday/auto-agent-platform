@@ -164,7 +164,7 @@ export class LLMClient {
    * 获取请求体
    * 针对不同提供商调整参数
    */
-  private getRequestBody(messages: Message[], options: { stream?: boolean; includeTools?: boolean; responseFormat?: 'json' | 'text' } = {}): object {
+  private getRequestBody(messages: Message[], options: { stream?: boolean; includeTools?: boolean; responseFormat?: 'json' | 'text'; tools?: any[] } = {}): object {
     const body: Record<string, any> = {
       model: this.config.model,
       messages: this.formatMessages(messages),
@@ -188,7 +188,8 @@ export class LLMClient {
 
     // 工具调用（部分本地模型可能不支持）
     if (options.includeTools && this.supportsTools()) {
-      body.tools = this.getTools()
+      // 优先使用外部传入的工具列表，否则使用内置工具
+      body.tools = options.tools || this.getTools()
       body.tool_choice = 'auto'
     }
 
@@ -273,7 +274,7 @@ export class LLMClient {
   /**
    * 非流式对话
    */
-  async chat(messages: Message[], userId?: string, options?: { includeTools?: boolean; responseFormat?: 'json' | 'text' }): Promise<LLMResponse> {
+  async chat(messages: Message[], userId?: string, options?: { includeTools?: boolean; responseFormat?: 'json' | 'text'; tools?: any[] }): Promise<LLMResponse> {
     // 检查限流（如果提供了userId）
     if (this.rateLimiter && userId) {
       const check = this.rateLimiter.checkLLMRequest(userId)
@@ -290,7 +291,8 @@ export class LLMClient {
       headers: this.getHeaders(),
       body: JSON.stringify(this.getRequestBody(messages, {
         includeTools: options?.includeTools ?? true,
-        responseFormat: options?.responseFormat
+        responseFormat: options?.responseFormat,
+        tools: options?.tools
       }))
     })
 
@@ -326,12 +328,14 @@ export class LLMClient {
    * @param messages 消息列表
    * @param onChunk 每当有内容 chunk 或 tool_call delta 时调用
    * @param userId 用户ID（用于限流检查）
+   * @param tools 工具列表（可选，用于 MCP 动态工具）
    * @returns 完整响应（包含 content 和 toolCalls）
    */
   async streamChat(
     messages: Message[],
     onChunk?: (chunk: string, toolCallDelta?: any) => void,
-    userId?: string
+    userId?: string,
+    tools?: any[]
   ): Promise<LLMResponse> {
     // 检查限流
     if (this.rateLimiter && userId) {
@@ -347,7 +351,7 @@ export class LLMClient {
     const response = await fetch(`${this.config.baseURL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(this.getRequestBody(messages, { stream: true, includeTools: true }))
+      body: JSON.stringify(this.getRequestBody(messages, { stream: true, includeTools: true, tools }))
     })
 
     if (!response.ok) {
