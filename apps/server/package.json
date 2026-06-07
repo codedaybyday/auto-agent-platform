@@ -16,10 +16,12 @@
   "dependencies": {
     "@auto-agent/shared-types": "workspace:*",
     "@auto-agent/shared-utils": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
     "express": "^4.19.0",
-    "ws": "^8.17.0"
+    "ws": "^8.17.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.0",

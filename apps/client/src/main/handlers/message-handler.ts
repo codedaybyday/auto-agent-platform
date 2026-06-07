@@ -1,12 +1,78 @@
 import { BrowserWindow } from 'electron'
-import { 
-  getCurrentSessionId, 
-  setCurrentSessionId, 
-  addSession, 
-  notifySessionsUpdated 
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { resolve } from 'path'
+import {
+  getCurrentSessionId,
+  setCurrentSessionId,
+  addSession,
+  notifySessionsUpdated
 } from '../core/session-manager'
 import { cleanupSessionTools } from '../tools/executor'
-import { generateId, getPendingConnectResolve, setPendingConnectResolve, getPendingSessionResolve, setPendingSessionResolve } from '../core/server-connection'
+import { generateId, getPendingConnectResolve, setPendingConnectResolve, getPendingSessionResolve, setPendingSessionResolve, sendMessage } from '../core/server-connection'
+import { log } from '@auto-agent/shared-utils'
+
+/**
+ * MCP Client 实例（每个会话一个）
+ */
+const mcpClients = new Map<string, Client>()
+const mcpTransports = new Map<string, StdioClientTransport>()
+
+/**
+ * 获取或创建 MCP Client
+ */
+async function getOrCreateMCPClient(sessionId: string): Promise<Client> {
+  if (mcpClients.has(sessionId)) {
+    return mcpClients.get(sessionId)!
+  }
+
+  log.info('MCP', `Creating MCP Client for session: ${sessionId}`)
+
+  // 启动本地 MCP Server
+  const isDev = process.env.NODE_ENV !== 'production'
+  const mcpServerPath = isDev
+    ? resolve(process.cwd(), 'src/main/service/mcp/server.ts')
+    : resolve(process.cwd(), 'out/main/service/mcp/server.js')
+
+  const transport = new StdioClientTransport({
+    command: isDev ? 'npx' : 'node',
+    args: isDev
+      ? ['tsx', mcpServerPath]
+      : ['--experimental-specifier-resolution=node', mcpServerPath],
+    env: {
+      ...process.env,
+      NODE_ENV: process.env.NODE_ENV || 'development',
+      MCP_SESSION_ID: sessionId
+    }
+  })
+
+  const client = new Client({
+    name: 'auto-agent-client',
+    version: '1.0.0'
+  })
+
+  await client.connect(transport)
+
+  mcpClients.set(sessionId, client)
+  mcpTransports.set(sessionId, transport)
+
+  log.info('MCP', `MCP Client connected for session: ${sessionId}`)
+
+  return client
+}
+
+/**
+ * 清理 MCP Client
+ */
+async function cleanupMCPClient(sessionId: string): Promise<void> {
+  const client = mcpClients.get(sessionId)
+  if (client) {
+    await client.close()
+    mcpClients.delete(sessionId)
+    mcpTransports.delete(sessionId)
+    log.info('MCP', `MCP Client cleaned up for session: ${sessionId}`)
+  }
+}
 
 /**
  * 服务器消息处理
@@ -36,10 +102,12 @@ export async function handleServerMessage(message: any, mainWindow: BrowserWindo
       handleStateUpdate(message, mainWindow)
       break
 
-    case 'tool.execute':
-      // 动态导入以避免循环依赖
-      const { executeToolAndReport } = await import('../tools/executor')
-      await executeToolAndReport(message, mainWindow)
+    case 'mcp.listTools':
+      await handleMCPListTools(message)
+      break
+
+    case 'mcp.callTool':
+      await handleMCPCallTool(message)
       break
 
     case 'tool.cleanup':
@@ -49,6 +117,66 @@ export async function handleServerMessage(message: any, mainWindow: BrowserWindo
     case 'session.create_ack':
       await handleSessionCreateAck(message, mainWindow)
       break
+  }
+}
+
+/**
+ * 处理 MCP listTools 请求
+ */
+async function handleMCPListTools(message: any): Promise<void> {
+  const { messageId, sessionId } = message
+
+  try {
+    const client = await getOrCreateMCPClient(sessionId)
+    const result = await client.listTools()
+
+    sendMessage({
+      type: 'mcp.response',
+      messageId,
+      sessionId,
+      payload: { result }
+    })
+  } catch (error) {
+    log.error('MCP', 'listTools failed:', error)
+    sendMessage({
+      type: 'mcp.error',
+      messageId,
+      sessionId,
+      payload: { error: error instanceof Error ? error.message : 'listTools failed' }
+    })
+  }
+}
+
+/**
+ * 处理 MCP callTool 请求
+ */
+async function handleMCPCallTool(message: any): Promise<void> {
+  const { messageId, sessionId, payload } = message
+
+  try {
+    const client = await getOrCreateMCPClient(sessionId)
+
+    log.info('MCP', `Calling tool: ${payload.name}`, payload.arguments)
+
+    const result = await client.callTool({
+      name: payload.name,
+      arguments: payload.arguments
+    })
+
+    sendMessage({
+      type: 'mcp.response',
+      messageId,
+      sessionId,
+      payload: { result }
+    })
+  } catch (error) {
+    log.error('MCP', 'callTool failed:', error)
+    sendMessage({
+      type: 'mcp.error',
+      messageId,
+      sessionId,
+      payload: { error: error instanceof Error ? error.message : 'callTool failed' }
+    })
   }
 }
 
