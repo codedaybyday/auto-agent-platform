@@ -130,6 +130,18 @@ async function handleMCPListTools(message: any): Promise<void> {
     const client = await getOrCreateMCPClient(sessionId)
     const result = await client.listTools()
 
+    // 详细记录返回值的结构
+    log.info('MCP', 'listTools raw result', {
+      result,
+      type: typeof result,
+      isArray: Array.isArray(result),
+      keys: result && typeof result === 'object' ? Object.keys(result) : null,
+      hasTools: result && typeof result === 'object' ? 'tools' in result : false,
+      toolsType: result?.tools ? typeof result.tools : null,
+      toolsIsArray: Array.isArray(result?.tools),
+      toolsLength: result?.tools?.length
+    })
+
     sendMessage({
       type: 'mcp.response',
       messageId,

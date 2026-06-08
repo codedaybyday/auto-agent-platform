@@ -9,6 +9,24 @@ export interface Session {
   messageCount: number
 }
 
+export interface MCPUserConfig {
+  builtInTools: {
+    browser: boolean
+    bash: boolean
+    file: boolean
+  }
+  userTools: Array<{
+    name: string
+    description: string
+    command?: string
+    args?: string[]
+    workingDir?: string
+    env?: Record<string, string>
+    script?: string
+    function?: string
+  }>
+}
+
 /**
  * Agent API 接口
  * 定义主进程暴露给渲染进程的 API
@@ -60,6 +78,10 @@ export interface AgentAPI {
   whoami: () => Promise<{ success: boolean; error?: string, data: any }>
   /** SSO 登出 */
   logout: () => Promise<{ success: boolean; error?: string }>
+  /** 获取 MCP 配置 */
+  getMCPConfig: () => Promise<{ success: boolean; config?: MCPUserConfig; error?: string }>
+  /** 保存 MCP 配置 */
+  saveMCPConfig: (config: MCPUserConfig) => Promise<{ success: boolean; error?: string }>
 }
 
 declare global {

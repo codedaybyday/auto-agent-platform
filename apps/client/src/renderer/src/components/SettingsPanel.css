@@ -277,3 +277,169 @@
 .tips-list li:last-child {
   margin-bottom: 0;
 }
+
+/* Tab 样式 */
+.settings-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  padding: 12px 24px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: #007AFF;
+}
+
+.tab-btn.active {
+  color: #007AFF;
+  border-bottom-color: #007AFF;
+}
+
+/* 工具开关样式 */
+.tool-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.tool-toggle:hover {
+  background: #eee;
+}
+
+.tool-toggle input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #007AFF;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #333;
+  flex: 1;
+}
+
+.toggle-label .tool-icon {
+  font-size: 20px;
+}
+
+.toggle-description {
+  font-size: 13px;
+  color: #888;
+  font-weight: normal;
+}
+
+/* 用户自定义工具样式 */
+.user-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.user-tool-item {
+  padding: 16px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+}
+
+.user-tool-header {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tool-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 8px;
+  transition: border-color 0.2s;
+}
+
+.tool-input:focus {
+  outline: none;
+  border-color: #007AFF;
+}
+
+.tool-name-input {
+  flex: 1;
+  font-weight: 600;
+}
+
+.remove-tool-btn {
+  width: 36px;
+  height: 36px;
+  background: #ff4444;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.remove-tool-btn:hover {
+  background: #cc0000;
+}
+
+.add-tool-btn {
+  padding: 12px 24px;
+  background: #f0f0f0;
+  border: 2px dashed #ccc;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-tool-btn:hover {
+  background: #e8e8e8;
+  border-color: #999;
+  color: #333;
+}
+
+.save-hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: #888;
+}
+
+.loading {
+  text-align: center;
+  padding: 48px;
+  color: #888;
+}

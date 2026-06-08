@@ -98,6 +98,11 @@ export class AgentLoop extends EventEmitter {
       throw error
     }
 
+    // 获取可用工具列表并生成动态系统提示词
+    const tools = await this.toolBridge.getAvailableTools()
+    this.config.systemPrompt = this.getDefaultSystemPrompt(tools)
+    log.info('AgentLoop', `已加载 ${tools.length} 个工具`, tools.map(t => t.function?.name || t.name))
+
     // 初始化
     this.state.status = 'running'
     this.state.iteration = 0
@@ -343,14 +348,20 @@ export class AgentLoop extends EventEmitter {
     // WebSocket 已在 MCPHub 中绑定，这里只需保存引用
   }
 
-  private getDefaultSystemPrompt(): string {
+  private getDefaultSystemPrompt(tools: any[] = []): string {
+    // 生成动态工具列表（处理 OpenAI 格式：{type, function: {name, description, parameters}}）
+    const toolsList = tools.map(t => {
+      const name = t.function?.name || t.name || 'unknown'
+      const desc = t.function?.description || t.description || ''
+      const shortDesc = desc ? ` — ${desc.split('。')[0]}` : ''
+      return `- ${name}${shortDesc}`
+    }).join('\n')
+
     return `## 角色
 你是一个智能助手，帮助用户完成各类任务。回复使用中文。
 
 ## 可用工具
-- browser_ai: 浏览器自动化（导航、点击、输入、搜索等）
-- bash: 执行系统命令
-- file_read/file_write: 文件读写
+${toolsList || '- 当前没有可用工具'}
 
 ## 核心原则：区分"询问"与"操作"
 
@@ -386,9 +397,9 @@ export class AgentLoop extends EventEmitter {
 ## 示例
 
 用户："什么是二叉树" → 直接解释概念
-用户："打开百度搜索二叉树" → 使用 browser_ai
+用户："打开百度搜索二叉树" → 使用 browser 工具
 用户："如何学习 Python" → 直接给出学习路径建议
-用户："创建一个 Python 文件" → 使用 file_write
+用户："创建一个 Python 文件" → 使用 file_write 工具
 
 ## 禁止事项
 
@@ -407,7 +418,7 @@ export class AgentLoop extends EventEmitter {
 
     // 获取可用工具列表（从 MCP ToolBridge - 异步）
     const tools = await this.toolBridge.getAvailableTools()
-    log.debug('AgentLoop', `可用工具: ${tools.length} 个`, tools.map(t => t.name))
+    log.debug('AgentLoop', `可用工具: ${tools.length} 个`, tools.map(t => t.function?.name || t.name))
 
     let response: LLMResponse
 

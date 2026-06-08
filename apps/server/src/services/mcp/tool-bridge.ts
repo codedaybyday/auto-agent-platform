@@ -79,18 +79,26 @@ export class MCPToolBridge {
       // 从 MCPHub 获取工具列表（MCP 格式）
       const tools = await mcpHub.listTools(this.sessionId, this.userId)
 
-      // 转换为 OpenAI 格式
-      return tools.map((tool: any) => {
-        const cleanName = tool.name.replace(`${this.sessionId}.`, '')
-        return {
-          type: 'function',
-          function: {
-            name: cleanName,
-            description: tool.description,
-            parameters: tool.inputSchema || { type: 'object', properties: {} }
+      // 过滤掉 null/undefined 工具，并转换为 OpenAI 格式
+      return tools
+        .filter((tool: any) => tool && tool.name)
+        .map((tool: any) => {
+          // 工具名格式: sessionId.local-tools.sessionId.toolName
+          // 需要去掉前缀，只保留最后的 toolName
+          let cleanName = tool.name
+          // 去掉 sessionId.local-tools. 前缀
+          cleanName = cleanName.replace(new RegExp(`^${this.sessionId}\.local-tools\.`), '')
+          // 再去掉可能残留的 sessionId. 前缀
+          cleanName = cleanName.replace(new RegExp(`^${this.sessionId}\.`), '')
+          return {
+            type: 'function',
+            function: {
+              name: cleanName,
+              description: tool.description || '',
+              parameters: tool.inputSchema || { type: 'object', properties: {} }
+            }
           }
-        }
-      })
+        })
     } catch (error) {
       log.error('MCPToolBridge', `Failed to get available tools`, error)
       return []

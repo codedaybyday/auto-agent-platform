@@ -8,6 +8,7 @@
     "dev": "turbo run dev",
     "dev:client": "turbo run dev --filter=@auto-agent/client",
     "dev:server": "turbo run dev --filter=@auto-agent/server",
+    "dev:seq": "pnpm dev:server > server.log 2>&1 & sleep 3 && pnpm dev:client > client.log",
     "lint": "turbo run lint",
     "format": "prettier --write .",
     "type-check": "turbo run type-check",

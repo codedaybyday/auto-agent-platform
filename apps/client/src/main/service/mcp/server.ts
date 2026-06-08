@@ -317,6 +317,7 @@ export async function startMCPServer(): Promise<void> {
 
   // 处理工具列表请求
   server.setRequestHandler(ListToolsRequestSchema, async () => {
+    console.error('[MCP Server] ListTools called, returning', registry.tools.length, 'tools')
     return { tools: registry.tools }
   })
 
