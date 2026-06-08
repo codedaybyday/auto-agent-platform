@@ -46,16 +46,12 @@ const DEFAULT_CONFIG: MCPUserConfig = {
 }
 
 export function getMCPConfigPath(): string {
-  // MCP Server 作为独立子进程时，使用用户主目录
-  // 主进程中则使用 Electron 的 userData 路径
-  if (isElectron() && process.type === 'browser') {
-    // 主进程环境
-    const { app } = require('electron')
-    return join(app.getPath('userData'), 'mcp-config.json')
-  }
-
-  // 子进程环境（MCP Server 独立运行）
-  return join(homedir(), '.auto-agent', 'mcp-config.json')
+  // 统一使用 ~/Library/Application Support/AutoAgent/mcp-config.json
+  // 主进程和子进程（MCP Server）都使用相同路径
+  const userDataPath = process.platform === 'darwin'
+    ? join(homedir(), 'Library', 'Application Support', 'AutoAgent')
+    : join(homedir(), '.auto-agent')
+  return join(userDataPath, 'mcp-config.json')
 }
 
 export function loadMCPConfig(): MCPUserConfig {
@@ -79,5 +75,6 @@ export function loadMCPConfig(): MCPUserConfig {
 
 export function saveMCPConfig(config: MCPUserConfig): void {
   const configPath = getMCPConfigPath()
+  mkdirSync(dirname(configPath), { recursive: true })
   writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8')
 }

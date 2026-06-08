@@ -120,8 +120,10 @@ export class MCPHub {
       state.pendingRequests.set(requestId, {
         resolve: (result) => {
           clearTimeout(timeout)
+          log.debug('MCPHub', `listTools raw result`, { resultType: typeof result, isArray: Array.isArray(result), resultKeys: result && !Array.isArray(result) ? Object.keys(result) : null, result })
           // 处理两种可能的格式: { tools: [...] } 或 { result: { tools: [...] } }
           const tools = result?.tools || result?.result?.tools || []
+          log.debug('MCPHub', `listTools extracted ${tools.length} tools`, tools.map((t: any) => t?.name || t))
           resolve(tools)
         },
         reject: (error) => {
@@ -202,6 +204,8 @@ export class MCPHub {
    * 处理 MCP 响应（从 Client 返回）
    */
   handleResponse(sessionId: string, messageId: string, result: any): void {
+    log.debug('MCPHub', `handleResponse called`, { sessionId, messageId, resultType: typeof result, resultKeys: result ? Object.keys(result) : null, result })
+
     const state = this.sessionStates.get(sessionId)
     if (!state) {
       log.warn('MCPHub', `No session state found for: ${sessionId}`)
