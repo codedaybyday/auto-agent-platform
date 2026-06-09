@@ -5,6 +5,7 @@
 
 import type { Message, ToolCall, LLMResponse } from '../../types/index.js'
 import { RateLimiter } from '../rate-limiter.js'
+import { log } from '@auto-agent/shared-utils'
 
 export interface LLMConfig {
   model: string
@@ -52,6 +53,7 @@ export class LLMClient {
   public readonly provider: LLMConfig['provider']
   public readonly isLocal: boolean
   private rateLimiter?: RateLimiter
+  private abortController?: AbortController
 
   constructor(config: Partial<LLMConfig> = {}, rateLimiter?: RateLimiter) {
     this.rateLimiter = rateLimiter
@@ -68,6 +70,24 @@ export class LLMClient {
       temperature: config.temperature || 0.7,
       provider: this.provider
     }
+  }
+
+  /**
+   * 中止当前请求
+   */
+  abort(): void {
+    if (this.abortController) {
+      log.info('LLMClient', 'Aborting LLM request')
+      this.abortController.abort()
+      this.abortController = undefined
+    }
+  }
+
+  /**
+   * 检查是否已中止
+   */
+  isAborted(): boolean {
+    return this.abortController?.signal.aborted ?? false
   }
 
   /**
@@ -329,13 +349,15 @@ export class LLMClient {
    * @param onChunk 每当有内容 chunk 或 tool_call delta 时调用
    * @param userId 用户ID（用于限流检查）
    * @param tools 工具列表（可选，用于 MCP 动态工具）
+   * @param abortSignal 中止信号（可选）
    * @returns 完整响应（包含 content 和 toolCalls）
    */
   async streamChat(
     messages: Message[],
     onChunk?: (chunk: string, toolCallDelta?: any) => void,
     userId?: string,
-    tools?: any[]
+    tools?: any[],
+    abortSignal?: AbortSignal
   ): Promise<LLMResponse> {
     // 检查限流
     if (this.rateLimiter && userId) {
@@ -348,10 +370,21 @@ export class LLMClient {
       }
     }
 
+    // 创建新的 AbortController 或复用外部的
+    this.abortController = new AbortController()
+
+    // 如果外部传入了 abortSignal，监听它
+    if (abortSignal) {
+      abortSignal.addEventListener('abort', () => {
+        this.abortController?.abort()
+      })
+    }
+
     const response = await fetch(`${this.config.baseURL}/chat/completions`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: JSON.stringify(this.getRequestBody(messages, { stream: true, includeTools: true, tools }))
+      body: JSON.stringify(this.getRequestBody(messages, { stream: true, includeTools: true, tools })),
+      signal: this.abortController.signal
     })
 
     if (!response.ok) {
@@ -367,65 +400,76 @@ export class LLMClient {
     const toolCallChunks: Map<number, any> = new Map()
     let usageData: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } = {}
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
 
-      const chunk = decoder.decode(value)
-      const lines = chunk.split('\n').filter(line => line.trim() !== '')
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n').filter(line => line.trim() !== '')
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6)
-          if (data === '[DONE]') continue
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            if (data === '[DONE]') continue
 
-          try {
-            const parsed = JSON.parse(data)
+            try {
+              const parsed = JSON.parse(data)
 
-            // 捕获 usage 数据（在流的最后）
-            if (parsed.usage) {
-              usageData = parsed.usage
-            }
-
-            const delta = parsed.choices?.[0]?.delta
-
-            // 处理内容
-            if (delta?.content) {
-              fullContent += delta.content
-              onChunk?.(delta.content, undefined)
-            }
-
-            // 处理 reasoning_content（DeepSeek 等模型）
-            if (delta?.reasoning_content) {
-              fullReasoningContent += delta.reasoning_content
-            }
-
-            // 累积 tool_calls
-            if (delta?.tool_calls) {
-              for (const toolCall of delta.tool_calls) {
-                const index = toolCall.index
-                if (!toolCallChunks.has(index)) {
-                  toolCallChunks.set(index, {
-                    id: toolCall.id,
-                    function: { name: '', arguments: '' }
-                  })
-                }
-                const existing = toolCallChunks.get(index)
-                if (toolCall.function?.name) {
-                  existing.function.name = toolCall.function.name
-                }
-                if (toolCall.function?.arguments) {
-                  existing.function.arguments += toolCall.function.arguments
-                }
-                // 通知 tool_call delta
-                onChunk?.('', toolCall)
+              // 捕获 usage 数据（在流的最后）
+              if (parsed.usage) {
+                usageData = parsed.usage
               }
+
+              const delta = parsed.choices?.[0]?.delta
+
+              // 处理内容
+              if (delta?.content) {
+                fullContent += delta.content
+                onChunk?.(delta.content, undefined)
+              }
+
+              // 处理 reasoning_content（DeepSeek 等模型）
+              if (delta?.reasoning_content) {
+                fullReasoningContent += delta.reasoning_content
+              }
+
+              // 累积 tool_calls
+              if (delta?.tool_calls) {
+                for (const toolCall of delta.tool_calls) {
+                  const index = toolCall.index
+                  if (!toolCallChunks.has(index)) {
+                    toolCallChunks.set(index, {
+                      id: toolCall.id,
+                      function: { name: '', arguments: '' }
+                    })
+                  }
+                  const existing = toolCallChunks.get(index)
+                  if (toolCall.function?.name) {
+                    existing.function.name = toolCall.function.name
+                  }
+                  if (toolCall.function?.arguments) {
+                    existing.function.arguments += toolCall.function.arguments
+                  }
+                  // 通知 tool_call delta
+                  onChunk?.('', toolCall)
+                }
+              }
+            } catch {
+              // ignore parse errors
             }
-          } catch {
-            // ignore parse errors
           }
         }
       }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        log.info('LLMClient', 'Stream aborted by user')
+        // 返回已生成的内容
+      } else {
+        throw error
+      }
+    } finally {
+      this.abortController = undefined
     }
 
     // 构建 toolCalls

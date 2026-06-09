@@ -36,6 +36,8 @@ export interface AgentAPI {
   init: (config: { apiKey: string; modelConfig: ModelConfig }) => Promise<{ success: boolean; sessionId?: string; error?: string }>
   /** 发送消息 */
   sendMessage: (content: string) => Promise<{ success: boolean; error?: string }>
+  /** 停止生成 */
+  stop: () => Promise<{ success: boolean; error?: string }>
   /** 清空对话历史 */
   clearHistory: () => Promise<{ success: boolean; error?: string }>
   /** 获取所有消息 */

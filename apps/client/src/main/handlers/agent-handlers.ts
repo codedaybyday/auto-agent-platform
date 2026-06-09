@@ -264,4 +264,36 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
       }
     }
   })
+
+  // 停止生成
+  ipcMain.handle('agent:stop', async () => {
+    try {
+      const sessionId = getCurrentSessionId()
+      if (!sessionId) {
+        return { success: false, error: 'No active session' }
+      }
+
+      const { ws, generateId } = await import('../core/server-connection')
+      if (!ws || ws.readyState !== 1) {
+        return { success: false, error: 'Not connected to server' }
+      }
+
+      ws.send(JSON.stringify({
+        type: 'agent.stop',
+        messageId: generateId(),
+        timestamp: Date.now(),
+        sessionId,
+        payload: {}
+      }))
+
+      log.info('Main', `Sent stop request for session: ${sessionId}`)
+      return { success: true }
+    } catch (error) {
+      log.error('Main', 'stop error', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  })
 }
