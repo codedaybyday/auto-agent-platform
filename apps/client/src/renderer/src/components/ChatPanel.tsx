@@ -31,6 +31,7 @@ interface ChatPanelProps {
   isStreaming?: boolean
   onSendMessage: (content: string) => void
   onClearHistory: () => void
+  onStop?: () => void
 }
 
 function formatTime(timestamp: number): string {
@@ -119,7 +120,8 @@ export function ChatPanel({
   streamingContent = '',
   isStreaming = false,
   onSendMessage,
-  onClearHistory
+  onClearHistory,
+  onStop
 }: ChatPanelProps): JSX.Element {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -228,17 +230,27 @@ export function ChatPanel({
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)"
+            placeholder={isProcessing ? 'AI 正在思考...' : '输入消息... (按 Enter 发送，Shift+Enter 换行)'}
             disabled={isProcessing}
             rows={1}
           />
-          <button
-            className="send-btn"
-            onClick={handleSubmit}
-            disabled={!input.trim() || isProcessing}
-          >
-            {isProcessing ? '⏳' : '➤'}
-          </button>
+          {isProcessing ? (
+            <button
+              className="send-btn stop-btn"
+              onClick={onStop}
+              title="停止生成"
+            >
+              ⏹
+            </button>
+          ) : (
+            <button
+              className="send-btn"
+              onClick={handleSubmit}
+              disabled={!input.trim()}
+            >
+              ➤
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -37,6 +37,7 @@ export class AgentLoop extends EventEmitter {
   private userId: string
   private wsClient: any = null
   private shortTermMemory: ShortTermMemory
+  private abortController?: AbortController
 
   constructor(
     sessionId: string,
@@ -200,7 +201,18 @@ export class AgentLoop extends EventEmitter {
         this.emit('run_error', { error, timestamp: Date.now() })
         throw error
       }
-    } catch (error) {
+    } catch (error: any) {
+      // 检查是否是用户主动停止
+      if (error.name === 'AbortError' || this.state.status === 'completed') {
+        log.info('AgentLoop', 'Agent loop stopped by user')
+        this.state.status = 'completed'
+        this.emit('run_stopped', {
+          timestamp: Date.now(),
+          reason: 'user_requested'
+        })
+        return
+      }
+
       this.state.status = 'error'
       log.error('AgentLoop', '执行错误', error)
 
@@ -252,7 +264,23 @@ export class AgentLoop extends EventEmitter {
    * 停止循环
    */
   stop(): void {
+    log.info('AgentLoop', 'Stopping agent loop...')
     this.state.status = 'completed'
+
+    // 中止 LLM 请求
+    if (this.abortController) {
+      this.abortController.abort()
+      this.abortController = undefined
+    }
+
+    // 中止 LLMClient 中的请求
+    this.llmClient.abort()
+
+    // 发送停止事件到前端
+    this.emit('run_stopped', {
+      timestamp: Date.now(),
+      reason: 'user_requested'
+    })
   }
 
   /**
@@ -420,6 +448,9 @@ ${toolsList || '- 当前没有可用工具'}
     const tools = await this.toolBridge.getAvailableTools()
     log.debug('AgentLoop', `可用工具: ${tools.length} 个`, tools.map(t => t.function?.name || t.name))
 
+    // 创建新的 AbortController 用于此次请求
+    this.abortController = new AbortController()
+
     let response: LLMResponse
 
     if (useStream) {
@@ -428,27 +459,32 @@ ${toolsList || '- 当前没有可用工具'}
       let fullReasoningContent = ''
       let accumulatedToolCalls: any[] = []
 
-      response = await this.llmClient.streamChat(
-        messages,
-        (chunk, toolCallDelta) => {
-          // 实时发送 SSE 格式 chunk 到前端
-          if (chunk) {
-            fullContent += chunk
-            this.emit('stream_chunk', {
-              type: 'sse',
-              event: 'content',
-              data: chunk,
-              sessionId: this.state.sessionId
-            })
-          }
-          // 累积 tool_calls（流式结束后统一处理）
-          if (toolCallDelta) {
-            accumulatedToolCalls.push(toolCallDelta)
-          }
-        },
-        this.userId,
-        tools
-      )
+      try {
+        response = await this.llmClient.streamChat(
+          messages,
+          (chunk, toolCallDelta) => {
+            // 实时发送 SSE 格式 chunk 到前端
+            if (chunk) {
+              fullContent += chunk
+              this.emit('stream_chunk', {
+                type: 'sse',
+                event: 'content',
+                data: chunk,
+                sessionId: this.state.sessionId
+              })
+            }
+            // 累积 tool_calls（流式结束后统一处理）
+            if (toolCallDelta) {
+              accumulatedToolCalls.push(toolCallDelta)
+            }
+          },
+          this.userId,
+          tools,
+          this.abortController.signal
+        )
+      } finally {
+        this.abortController = undefined
+      }
 
       // 发送 SSE 结束标记
       this.emit('stream_chunk', {

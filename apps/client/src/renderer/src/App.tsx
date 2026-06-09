@@ -418,6 +418,19 @@ function App(): JSX.Element {
     }
   }
 
+  const handleStop = async () => {
+    if (!currentSessionId) return
+    console.log('[App] Stopping agent for session:', currentSessionId)
+    try {
+      const result = await window.api.agent.stop()
+      if (!result.success) {
+        console.error('[App] Failed to stop agent:', result.error)
+      }
+    } catch (error) {
+      console.error('[App] Error stopping agent:', error)
+    }
+  }
+
   if (!userInfo) {
     return (
       <div className="login-container">
@@ -528,6 +541,7 @@ function App(): JSX.Element {
             isStreaming={isStreaming}
             onSendMessage={handleSendMessage}
             onClearHistory={handleClearHistory}
+            onStop={handleStop}
           />
         ) : (
           <SettingsPanel isConnected={isConnected} />
