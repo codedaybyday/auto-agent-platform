@@ -70,20 +70,15 @@ export function SessionPanel({
 
   return (
     <div className="session-panel">
-      <div className="session-panel-header">
-        <h3>会话列表</h3>
-        <button className="new-session-btn" onClick={onCreateSession} title="新建会话">
-          <span>+</span>
-          新建
-        </button>
-      </div>
-
+      {/* 会话列表 */}
       <div className="session-list">
         {sessions.length === 0 ? (
           <div className="empty-sessions">
             <span className="empty-icon">💬</span>
             <p>暂无会话</p>
-            <p className="empty-hint">点击上方按钮创建新会话</p>
+            <button className="empty-action" onClick={onCreateSession}>
+              创建新会话
+            </button>
           </div>
         ) : (
           sessions.map((session) => (
@@ -92,38 +87,41 @@ export function SessionPanel({
               className={`session-item ${session.id === currentSessionId ? 'active' : ''}`}
               onClick={() => onSwitchSession(session.id)}
             >
-              <div className="session-icon">💬</div>
-              <div className="session-info">
-                {editingId === session.id ? (
-                  <input
-                    className="session-title-input"
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    onBlur={handleSaveEdit}
-                    onKeyDown={handleKeyDown}
-                    autoFocus
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <>
-                    <div
-                      className="session-title"
-                      onDoubleClick={(e) => {
-                        e.stopPropagation()
-                        handleStartEdit(session)
-                      }}
-                    >
-                      {session.title}
-                    </div>
-                    <div className="session-meta">
-                      <span>{session.messageCount} 条消息</span>
-                      <span>·</span>
-                      <span>{formatTime(session.updatedAt)}</span>
-                      {session.unreadCount && session.unreadCount > 0 && (
-                        <span className="unread-badge">{session.unreadCount}</span>
-                      )}
-                    </div>
-                  </>
+              <div className="session-content">
+                <div className="session-icon">💬</div>
+                <div className="session-info">
+                  {editingId === session.id ? (
+                    <input
+                      className="session-title-input"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onBlur={handleSaveEdit}
+                      onKeyDown={handleKeyDown}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <>
+                      <div
+                        className="session-title"
+                        onDoubleClick={(e) => {
+                          e.stopPropagation()
+                          handleStartEdit(session)
+                        }}
+                        title={session.title}
+                      >
+                        {session.title}
+                      </div>
+                      <div className="session-meta">
+                        <span>{session.messageCount} 条消息</span>
+                        <span className="separator">·</span>
+                        <span>{formatTime(session.updatedAt)}</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+                {session.unreadCount && session.unreadCount > 0 && (
+                  <span className="unread-badge">{session.unreadCount}</span>
                 )}
               </div>
               <button
@@ -143,9 +141,12 @@ export function SessionPanel({
         )}
       </div>
 
-      <div className="session-hint">
-        <p>💡 双击会话名称可重命名</p>
-      </div>
+      {/* 提示 */}
+      {sessions.length > 0 && (
+        <div className="session-hint">
+          <p>💡 双击会话名称可重命名</p>
+        </div>
+      )}
     </div>
   )
 }
