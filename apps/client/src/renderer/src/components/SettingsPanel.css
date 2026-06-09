@@ -2,8 +2,8 @@
    Settings Panel - VSCode Style
    ============================================ */
 
-/* CSS Variables */
-:root {
+/* CSS Variables - Scoped to settings container only */
+.settings-container {
   --settings-bg: #1e1e1e;
   --sidebar-bg: #252526;
   --content-bg: #1e1e1e;
