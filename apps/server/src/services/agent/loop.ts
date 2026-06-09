@@ -102,7 +102,7 @@ export class AgentLoop extends EventEmitter {
     // 获取可用工具列表并生成动态系统提示词
     const tools = await this.toolBridge.getAvailableTools()
     this.config.systemPrompt = this.getDefaultSystemPrompt(tools)
-    log.info('AgentLoop', `已加载 ${tools.length} 个工具`, tools.map(t => t.function?.name || t.name))
+    log.info('AgentLoop', `已加载 ${tools.length} 个工具`, tools.map(t => t.function?.name))
 
     // 初始化
     this.state.status = 'running'
@@ -446,7 +446,7 @@ ${toolsList || '- 当前没有可用工具'}
 
     // 获取可用工具列表（从 MCP ToolBridge - 异步）
     const tools = await this.toolBridge.getAvailableTools()
-    log.debug('AgentLoop', `可用工具: ${tools.length} 个`, tools.map(t => t.function?.name || t.name))
+    log.debug('AgentLoop', `可用工具: ${tools.length} 个`, tools.map(t => t.function?.name))
 
     // 创建新的 AbortController 用于此次请求
     this.abortController = new AbortController()

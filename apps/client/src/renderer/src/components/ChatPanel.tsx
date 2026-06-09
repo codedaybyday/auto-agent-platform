@@ -126,6 +126,7 @@ export function ChatPanel({
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const isComposingRef = useRef(false)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -145,10 +146,19 @@ export function ChatPanel({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // 中文输入法组合中，不处理回车（让输入法自行处理）
+    if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
       e.preventDefault()
       handleSubmit()
     }
+  }
+
+  const handleCompositionStart = () => {
+    isComposingRef.current = true
+  }
+
+  const handleCompositionEnd = () => {
+    isComposingRef.current = false
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -230,6 +240,8 @@ export function ChatPanel({
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
             placeholder={isProcessing ? 'AI 正在思考...' : '输入消息... (按 Enter 发送，Shift+Enter 换行)'}
             disabled={isProcessing}
             rows={1}
