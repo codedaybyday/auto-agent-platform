@@ -325,7 +325,21 @@ export class WebSocketGateway {
    * 创建会话
    */
   private async handleSessionCreate(connection: WSConnection, message: WSMessage): Promise<void> {
-    const session = await this.sessionManager.createSession(connection.userId, message.payload?.title)
+    // 根因：HTTP 创建会话后，WebSocket 消息又创建了新会话，导致 WebSocket 绑定错误
+    // 修复：如果 payload 中有 sessionId，使用已存在的会话；否则创建新会话
+    const existingSessionId = message.payload?.sessionId
+    let session: any
+
+    if (existingSessionId) {
+      session = this.sessionManager.getSession(existingSessionId)
+      if (!session) {
+        throw new Error(`Session not found: ${existingSessionId}`)
+      }
+      console.log(`[WebSocket] Using existing session: ${existingSessionId}`)
+    } else {
+      session = await this.sessionManager.createSession(connection.userId, message.payload?.title)
+      console.log(`[WebSocket] Created new session: ${session.id}`)
+    }
 
     // 注册新会话到事件总线
     this.eventBus.registerSession(session.id, connection.userId)
