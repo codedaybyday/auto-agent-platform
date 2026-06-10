@@ -31,8 +31,8 @@ async function getOrCreateMCPClient(sessionId: string): Promise<Client> {
   // 启动本地 MCP Server
   const isDev = process.env.NODE_ENV !== 'production'
   const mcpServerPath = isDev
-    ? resolve(process.cwd(), 'src/main/service/mcp/server.ts')
-    : resolve(process.cwd(), 'out/main/service/mcp/server.js')
+    ? resolve(process.cwd(), 'src/main/services/mcp/server.ts')
+    : resolve(process.cwd(), 'out/main/services/mcp/server.js')
 
   const transport = new StdioClientTransport({
     command: isDev ? 'npx' : 'node',

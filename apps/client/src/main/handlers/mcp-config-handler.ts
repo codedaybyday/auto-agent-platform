@@ -4,7 +4,7 @@
  */
 
 import { ipcMain } from 'electron'
-import { loadMCPConfig, saveMCPConfig, MCPUserConfig } from '../service/mcp/config.js'
+import { loadMCPConfig, saveMCPConfig, MCPUserConfig } from '../services/mcp/config.js'
 import { log } from '@auto-agent/shared-utils'
 
 export function setupMCPConfigHandlers(): void {
