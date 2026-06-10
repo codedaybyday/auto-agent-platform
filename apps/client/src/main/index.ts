@@ -7,6 +7,7 @@ import { createWindow, getAllWindows } from './services/window-manager'
 import { setupAgentHandlers } from './handlers/agent-handlers'
 import { handleServerMessage } from './handlers/message-handler'
 import { setupMCPConfigHandlers } from './handlers/mcp-config-handler'
+import { setupFileSaveHandlers } from './handlers/file-save-handler'
 import { cleanupAllTools } from './tools/executor'
 import { browserManager } from './tools/browser-manager'
 import { log } from '@auto-agent/shared-utils'
@@ -29,6 +30,7 @@ app.whenReady().then(async () => {
 
   setupAgentHandlers(mainWindow)
   setupMCPConfigHandlers()
+  setupFileSaveHandlers()
 
   // 启动时连接服务端
   connectToServer(mainWindow).catch(err => log.error('Main', 'Failed to connect to server', err))

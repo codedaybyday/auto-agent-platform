@@ -325,11 +325,38 @@ export class LLMClient {
 
     console.log('[LLMClient] 模型原始返回:', JSON.stringify(choice))
     // 某些本地模型可能不返回 tool_calls
-    const toolCalls = choice.message?.tool_calls?.map((tool: any) => ({
-      id: tool.id,
-      name: tool.function.name,
-      arguments: JSON.parse(tool.function.arguments)
-    }))
+    const toolCalls: ToolCall[] = []
+    const parseErrors: string[] = []
+
+    for (const tool of choice.message?.tool_calls || []) {
+      try {
+        // 根因：tool.function.arguments 可能为 undefined/null，直接 JSON.parse 会抛出 SyntaxError
+        // 修复：添加空值检查，避免解析错误
+        const args = tool.function?.arguments
+        if (!args) {
+          throw new Error('Tool arguments is missing or empty')
+        }
+        toolCalls.push({
+          id: tool.id,
+          name: tool.function.name,
+          arguments: JSON.parse(args)
+        })
+      } catch (e) {
+        // 根因：工具参数解析失败时不应该静默丢弃，否则 LLM 不知道工具未执行
+        // 修复：记录错误并保留原始参数，让上层知道发生了错误
+        const errorMsg = `Failed to parse arguments for tool '${tool.function?.name}': ${e instanceof Error ? e.message : String(e)}`
+        console.error(`[LLMClient] ${errorMsg}`)
+        console.error(`[LLMClient] Raw arguments:`, tool.function.arguments)
+        parseErrors.push(errorMsg)
+
+        // 仍然添加工具调用，但标记为解析错误
+        toolCalls.push({
+          id: tool.id,
+          name: tool.function.name,
+          arguments: { _parseError: errorMsg, _rawArguments: tool.function.arguments }
+        })
+      }
+    }
 
     return {
       content: choice.message?.content || '',
@@ -374,10 +401,14 @@ export class LLMClient {
     this.abortController = new AbortController()
 
     // 如果外部传入了 abortSignal，监听它
+    // 根因：事件监听器没有移除，多次调用会累积导致内存泄漏
+    // 修复：使用 AbortSignal.any() 或在请求完成后移除监听器
+    let abortHandler: (() => void) | undefined
     if (abortSignal) {
-      abortSignal.addEventListener('abort', () => {
+      abortHandler = () => {
         this.abortController?.abort()
-      })
+      }
+      abortSignal.addEventListener('abort', abortHandler)
     }
 
     const response = await fetch(`${this.config.baseURL}/chat/completions`, {
@@ -469,6 +500,10 @@ export class LLMClient {
         throw error
       }
     } finally {
+      // 移除 abortSignal 监听器，避免内存泄漏
+      if (abortSignal && abortHandler) {
+        abortSignal.removeEventListener('abort', abortHandler)
+      }
       this.abortController = undefined
     }
 
@@ -484,7 +519,12 @@ export class LLMClient {
             arguments: JSON.parse(chunk.function.arguments)
           })
         } catch (e) {
+          // 记录原始参数内容以便调试
           console.error(`[LLMClient] Failed to parse tool call arguments for ${chunk.function?.name}:`, e)
+          console.error(`[LLMClient] Raw arguments (length=${chunk.function.arguments?.length}):`,
+            JSON.stringify(chunk.function.arguments))
+          console.error(`[LLMClient] Arguments preview:`,
+            chunk.function.arguments?.substring(0, 200))
         }
       }
     }

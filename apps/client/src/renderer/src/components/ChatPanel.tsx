@@ -1,6 +1,9 @@
+/// <reference types="../types" />
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import './ChatPanel.css'
 
 interface ToolCall {
@@ -70,6 +73,121 @@ function ToolResultDisplay({ result }: { result: ToolResult }): JSX.Element {
   )
 }
 
+// 代码块组件，带保存按钮
+function CodeBlock({ language, code }: { language?: string; code: string }): JSX.Element {
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [filename, setFilename] = useState(`code.${language || 'txt'}`)
+  const [showInput, setShowInput] = useState(false)
+
+  const handleSave = async () => {
+    if (!window.api?.agent?.saveCodeToFile) {
+      alert('保存功能不可用')
+      return
+    }
+
+    setIsSaving(true)
+    setSaveStatus('idle')
+
+    try {
+      const result = await window.api.agent.saveCodeToFile(filename, code)
+      if (result.success) {
+        setSaveStatus('success')
+        setTimeout(() => {
+          setSaveStatus('idle')
+          setShowInput(false)
+        }, 2000)
+      } else {
+        setSaveStatus('error')
+        alert(`保存失败: ${result.error}`)
+      }
+    } catch (error) {
+      setSaveStatus('error')
+      alert(`保存出错: ${error}`)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      setSaveStatus('success')
+      setTimeout(() => setSaveStatus('idle'), 1500)
+    } catch {
+      alert('复制失败')
+    }
+  }
+
+  return (
+    <div className="code-block-container">
+      <div className="code-block-header">
+        <span className="code-language">{language || 'code'}</span>
+        <div className="code-actions">
+          {showInput ? (
+            <>
+              <input
+                type="text"
+                className="filename-input"
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                placeholder="文件名"
+                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              />
+              <button
+                className="code-action-btn save-btn"
+                onClick={handleSave}
+                disabled={isSaving}
+                title="保存"
+              >
+                {isSaving ? '⏳' : '💾'}
+              </button>
+              <button
+                className="code-action-btn cancel-btn"
+                onClick={() => setShowInput(false)}
+                title="取消"
+              >
+                ✕
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="code-action-btn copy-btn"
+                onClick={handleCopy}
+                title="复制代码"
+              >
+                {saveStatus === 'success' ? '✓' : '📋'}
+              </button>
+              <button
+                className="code-action-btn save-btn"
+                onClick={() => setShowInput(true)}
+                title="保存到文件"
+              >
+                💾
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <SyntaxHighlighter
+        language={language || 'text'}
+        style={vscDarkPlus}
+        customStyle={{
+          margin: 0,
+          padding: '12px 16px',
+          fontSize: '0.85em',
+          lineHeight: '1.5',
+          borderRadius: '0 0 8px 8px',
+          background: '#1e1e1e'
+        }}
+      >
+        {code}
+      </SyntaxHighlighter>
+    </div>
+  )
+}
+
 function MessageBubble({ message, isLoading, isStreaming }: { message: Message; isLoading?: boolean; isStreaming?: boolean }): JSX.Element {
   const isUser = message.role === 'user'
 
@@ -82,7 +200,34 @@ function MessageBubble({ message, isLoading, isStreaming }: { message: Message; 
 
       {message.content ? (
         <div className={`message-content ${isStreaming ? 'streaming' : ''}`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              code({ className, children, ...props }) {
+                // 根因：\w 不能匹配所有语言标识符字符（如 c++、c#、objective-c 等）
+                // 修复：使用更宽松的正则，匹配 language- 后的所有非空白字符
+                const match = /language-([\w+.\-#]+)/.exec(className || '')
+                const language = match ? match[1] : undefined
+                const code = String(children).replace(/\n$/, '')
+
+                // 如果是有语言标识的代码块或者是块级代码（包含换行），使用 CodeBlock 组件
+                if (match || code.includes('\n')) {
+                  return <CodeBlock language={language} code={code} />
+                }
+
+                // 行内代码
+                return (
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                )
+              },
+              pre({ children }) {
+                // 如果 pre 包含 CodeBlock，直接返回 children
+                return <>{children}</>
+              }
+            }}
+          >
             {message.content}
           </ReactMarkdown>
           {isStreaming && <span className="streaming-cursor">▋</span>}

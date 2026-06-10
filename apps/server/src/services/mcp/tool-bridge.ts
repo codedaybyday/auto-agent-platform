@@ -28,6 +28,7 @@ export class MCPToolBridge {
 
   /**
    * 执行工具
+   * 优先检查内置工具，否则通过 WebSocket 桥接到客户端
    */
   async execute(toolCall: ToolCall): Promise<ToolResult> {
     const startTime = Date.now()
@@ -39,8 +40,39 @@ export class MCPToolBridge {
       args: toolCall.arguments
     })
 
+    // 首先检查是否是内置工具（直接执行）
+    const tool = toolRegistry.getTool(toolName)
+    if (tool?.source === 'builtin' && tool.executor) {
+      log.info('MCPToolBridge', `Executing builtin tool: ${toolName}`)
+      try {
+        const result = await tool.executor(
+          toolCall.arguments as Record<string, unknown>,
+          {
+            sessionId: this.sessionId,
+            userId: this.userId
+          }
+        )
+        return {
+          toolCallId: toolCall.id,
+          success: result.success,
+          data: result.data,
+          error: result.error,
+          metadata: result.metadata,
+          executionTime: Date.now() - startTime
+        }
+      } catch (error) {
+        log.error('MCPToolBridge', `Builtin tool execution failed: ${toolName}`, error)
+        return {
+          toolCallId: toolCall.id,
+          success: false,
+          error: error instanceof Error ? error.message : 'Tool execution failed',
+          executionTime: Date.now() - startTime
+        }
+      }
+    }
+
+    // 非内置工具，通过 MCPHub 调用（WebSocket 桥接）
     try {
-      // 通过 MCPHub 调用工具（WebSocket 桥接）
       const result = await mcpHub.callTool(
         this.sessionId,
         this.userId,
@@ -72,15 +104,28 @@ export class MCPToolBridge {
 
   /**
    * 获取可用工具列表（用于发送给 LLM）
-   * 将 MCP 格式转换为 OpenAI 工具格式
+   * 合并内置工具和 MCP 工具，转换为 OpenAI 工具格式
    */
   async getAvailableTools() {
-    try {
-      // 从 MCPHub 获取工具列表（MCP 格式）
-      const tools = await mcpHub.listTools(this.sessionId, this.userId)
+    const allTools: any[] = []
 
-      // 过滤掉 null/undefined 工具，并转换为 OpenAI 格式
-      return tools
+    // 1. 获取内置工具
+    const builtinTools = toolRegistry.getAllTools()
+      .filter(tool => tool.name && !tool.name.includes('.')) // 内置工具名不含点号
+      .map(tool => ({
+        type: 'function',
+        function: {
+          name: tool.name,
+          description: tool.description || '',
+          parameters: tool.inputSchema || { type: 'object', properties: {} }
+        }
+      }))
+    allTools.push(...builtinTools)
+
+    // 2. 从 MCPHub 获取客户端工具（MCP 格式）
+    try {
+      const mcpTools = await mcpHub.listTools(this.sessionId, this.userId)
+      const formattedMcpTools = mcpTools
         .filter((tool: any) => tool && tool.name)
         .map((tool: any) => {
           // 工具名格式: sessionId.local-tools.sessionId.toolName
@@ -99,10 +144,12 @@ export class MCPToolBridge {
             }
           }
         })
+      allTools.push(...formattedMcpTools)
     } catch (error) {
-      log.error('MCPToolBridge', `Failed to get available tools`, error)
-      return []
+      log.warn('MCPToolBridge', `Failed to get MCP tools`, error)
     }
+
+    return allTools
   }
 
   /**

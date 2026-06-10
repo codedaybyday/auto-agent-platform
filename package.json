@@ -12,7 +12,9 @@
     "lint": "turbo run lint",
     "format": "prettier --write .",
     "type-check": "turbo run type-check",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "kill:server": "kill -9 $(lsof -t -i:3001) 2>/dev/null || echo 'Port 3001 is free'",
+    "predev:server": "pnpm kill:server"
   },
   "devDependencies": {
     "@types/node": "^20.14.8",

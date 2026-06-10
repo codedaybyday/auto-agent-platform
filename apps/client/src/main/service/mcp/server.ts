@@ -17,7 +17,15 @@ import {
 import { z } from 'zod'
 import { browserController } from '../../tools/browser-use/index.js'
 import { createBashTool } from '../../tools/bash/index.js'
-import { fileReadTool, fileWriteTool } from '../../tools/file/index.js'
+import {
+  fileReadTool,
+  fileWriteTool,
+  fileListTool,
+  fileDeleteTool,
+  fileStatsTool,
+  workspaceStatsTool,
+  setCurrentUser
+} from '../../workspace/index.js'
 import { loadMCPConfig, UserTool } from './config.js'
 import { spawn } from 'child_process'
 import { join } from 'path'
@@ -54,16 +62,34 @@ const BashSchema = z.object({
   workingDir: z.string().optional().describe('工作目录')
 })
 
+// 沙盒路径说明（用于工具描述）
+const SANDBOX_PATH_DESC = '相对于沙盒根目录的路径，如 "projects/demo.py"，禁止使用绝对路径如 "/Users/xxx/file.py"'
+
 const FileReadSchema = z.object({
-  path: z.string().describe('文件路径'),
+  path: z.string().describe(SANDBOX_PATH_DESC),
   encoding: z.enum(['utf8', 'base64']).optional().describe('编码方式')
 })
 
 const FileWriteSchema = z.object({
-  path: z.string().describe('文件路径'),
+  path: z.string().describe(SANDBOX_PATH_DESC),
   content: z.string().describe('文件内容'),
-  encoding: z.enum(['utf8', 'base64']).optional().describe('编码方式')
+  encoding: z.enum(['utf8', 'base64']).optional().describe('编码方式'),
+  append: z.boolean().optional().describe('是否追加模式')
 })
+
+const FileListSchema = z.object({
+  path: z.string().optional().describe(SANDBOX_PATH_DESC + '，留空表示根目录')
+})
+
+const FileDeleteSchema = z.object({
+  path: z.string().describe(SANDBOX_PATH_DESC)
+})
+
+const FileStatsSchema = z.object({
+  path: z.string().describe(SANDBOX_PATH_DESC)
+})
+
+const WorkspaceStatsSchema = z.object({})
 
 // 用户自定义工具的参数Schema（开放任意参数）
 const UserToolSchema = z.object({}).passthrough()
@@ -122,7 +148,12 @@ function convertZodType(zodType: z.ZodType): Record<string, unknown> {
 }
 
 // ============ 工具注册表 ============
-type ToolHandler = (args: Record<string, unknown>) => Promise<string>
+interface ToolResult {
+  text: string
+  isError?: boolean
+}
+
+type ToolHandler = (args: Record<string, unknown>) => Promise<string | ToolResult>
 
 interface ToolRegistry {
   tools: Tool[]
@@ -200,20 +231,57 @@ function registerBuiltInTools(config: { browser: boolean; bash: boolean; file: b
   }
 
   if (config.file) {
-    registerTool('file_read', '读取文件内容', FileReadSchema, async (args) => {
+    registerTool('file_read', '读取沙盒内文件内容', FileReadSchema, async (args) => {
       const { path, encoding } = FileReadSchema.parse(args)
       const result = await fileReadTool({ path, encoding })
       return result.success
         ? `文件内容:\n${result.content}`
-        : `读取失败: ${result.error}`
+        : { text: `读取失败: ${result.error}`, isError: true }
     })
 
-    registerTool('file_write', '写入文件内容', FileWriteSchema, async (args) => {
-      const { path, content, encoding } = FileWriteSchema.parse(args)
-      const result = await fileWriteTool({ path, content, encoding })
+    registerTool('file_write', '写入内容到沙盒内文件（自动创建目录）', FileWriteSchema, async (args) => {
+      const { path, content, encoding, append } = FileWriteSchema.parse(args)
+      const result = await fileWriteTool({ path, content, encoding, append })
       return result.success
         ? `写入成功: ${path}`
-        : `写入失败: ${result.error}`
+        : { text: `写入失败: ${result.error}`, isError: true }
+    })
+
+    registerTool('file_list', '列出沙盒内指定目录的文件和子目录', FileListSchema, async (args) => {
+      const { path } = FileListSchema.parse(args)
+      const result = await fileListTool({ path })
+      if (!result.success) {
+        return { text: `列出目录失败: ${result.error}`, isError: true }
+      }
+      const filesList = result.files?.map(f => `${f.type === 'directory' ? '📁' : '📄'} ${f.name}`).join('\n')
+      return `目录内容 (${path || '根目录'}):\n${filesList || '(空目录)'}`
+    })
+
+    registerTool('file_delete', '删除沙盒内的文件或目录', FileDeleteSchema, async (args) => {
+      const { path } = FileDeleteSchema.parse(args)
+      const result = await fileDeleteTool({ path })
+      return result.success
+        ? `删除成功: ${path}`
+        : { text: `删除失败: ${result.error}`, isError: true }
+    })
+
+    registerTool('file_stats', '获取沙盒内文件或目录的详细信息', FileStatsSchema, async (args) => {
+      const { path } = FileStatsSchema.parse(args)
+      const result = await fileStatsTool({ path })
+      if (!result.success) {
+        return { text: `获取信息失败: ${result.error}`, isError: true }
+      }
+      const s = result.stats!
+      return `文件信息:\n- 路径: ${s.path}\n- 类型: ${s.type}\n- 大小: ${s.size} bytes\n- 创建: ${s.created}\n- 修改: ${s.modified}`
+    })
+
+    registerTool('workspace_stats', '获取用户工作空间的统计信息（容量使用情况）', WorkspaceStatsSchema, async () => {
+      const result = await workspaceStatsTool()
+      if (!result.success) {
+        return { text: `获取统计失败: ${result.error}`, isError: true }
+      }
+      const d = result.data!
+      return `工作空间统计:\n- 用户: ${d.userId}\n- 路径: ${d.sandboxPath}\n- 使用: ${(d.size / 1024 / 1024).toFixed(2)} MB / ${(d.maxSize / 1024 / 1024).toFixed(0)} MB (${d.usagePercent}%)\n- 文件数: ${d.fileCount} / ${d.maxFiles}`
     })
   }
 }
@@ -289,6 +357,11 @@ function createUserToolHandler(userTool: UserTool): ToolHandler {
 export async function startMCPServer(): Promise<void> {
   console.error('[MCP Server] Starting Auto Agent Client MCP Server...')
 
+  // 设置当前用户（从环境变量获取，默认 'default'）
+  const userId = process.env.AUTOAGENT_USER_ID || 'default'
+  setCurrentUser(userId)
+  console.error('[MCP Server] User set:', userId)
+
   // 加载配置
   const config = loadMCPConfig()
   console.error('[MCP Server] Config loaded:', {
@@ -301,6 +374,7 @@ export async function startMCPServer(): Promise<void> {
   registerUserTools(config.userTools)
 
   console.error('[MCP Server] Tools registered:', registry.tools.map(t => t.name).join(', '))
+  console.error('[MCP Server] Workspace path:', process.env.AUTOAGENT_WORKSPACE_PATH || '(default: ~/AutoAgentWorkspace)')
 
   // 创建 MCP Server
   const server = new Server(
@@ -337,11 +411,16 @@ export async function startMCPServer(): Promise<void> {
 
     try {
       const result = await handler(args as Record<string, unknown>)
+
+      // 支持返回字符串或 ToolResult 对象
+      const text = typeof result === 'string' ? result : result.text
+      const isError = typeof result === 'string' ? false : result.isError
+
       const content: TextContent[] = [{
         type: 'text',
-        text: result
+        text
       }]
-      return { content }
+      return isError ? { content, isError: true } : { content }
     } catch (error) {
       console.error('[MCP Server] Tool execution error:', error)
       const content: TextContent[] = [{

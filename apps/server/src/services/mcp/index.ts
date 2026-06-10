@@ -9,6 +9,7 @@ export {
   toolRegistry,
   type RegisteredTool,
   type BuiltinToolExecutor,
+  type BuiltinToolResult,
   type ToolExecutionContext,
   zodToJsonSchema
 } from './registry.js'

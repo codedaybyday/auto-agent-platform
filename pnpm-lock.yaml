@@ -41,12 +41,18 @@ importers:
       '@mtfe/sso-web-oidc-cli':
         specifier: ^1.4.1
         version: 1.4.1(encoding@0.1.13)
+      '@types/react-syntax-highlighter':
+        specifier: ^15.5.13
+        version: 15.5.13
       playwright:
         specifier: ^1.45.0
         version: 1.60.0
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@18.3.28)(react@18.3.1)
+      react-syntax-highlighter:
+        specifier: ^16.1.1
+        version: 16.1.1(react@18.3.1)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
@@ -267,6 +273,10 @@ packages:
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
+
+  '@babel/runtime@7.29.7':
+    resolution: {integrity: sha1-EgIkUMRaTabY2Ch7GKT/Ldsj92g=, tarball: http://r.npm.sankuai.com/@babel/runtime/download/@babel/runtime-7.29.7.tgz}
+    engines: {node: '>=6.9.0'}
 
   '@babel/template@7.28.6':
     resolution: {integrity: sha1-Dn5W7O23iu72bOeXKwgvznaiPlc=, tarball: http://r.npm.sankuai.com/@babel/template/download/@babel/template-7.28.6.tgz}
@@ -964,6 +974,9 @@ packages:
   '@types/plist@3.0.5':
     resolution: {integrity: sha1-mgxJwPmIbIyGlqeQTdcD9ihANuA=, tarball: http://r.npm.sankuai.com/@types/plist/download/@types/plist-3.0.5.tgz}
 
+  '@types/prismjs@1.26.6':
+    resolution: {integrity: sha1-bqJ8Em1kUxmuT3BV7aY6noNcAYc=, tarball: http://r.npm.sankuai.com/@types/prismjs/download/@types/prismjs-1.26.6.tgz}
+
   '@types/prop-types@15.7.15':
     resolution: {integrity: sha1-5uWobWAr6spxzlFj+t9fldcJMcc=, tarball: http://r.npm.sankuai.com/@types/prop-types/download/@types/prop-types-15.7.15.tgz}
 
@@ -977,6 +990,9 @@ packages:
     resolution: {integrity: sha1-uJ3fLNg7T+r8xOLqQa/fuVoNGU8=, tarball: http://r.npm.sankuai.com/@types/react-dom/download/@types/react-dom-18.3.7.tgz}
     peerDependencies:
       '@types/react': ^18.0.0
+
+  '@types/react-syntax-highlighter@15.5.13':
+    resolution: {integrity: sha1-xbr2KjIZs78o05z+pV0KSaJj0fI=, tarball: http://r.npm.sankuai.com/@types/react-syntax-highlighter/download/@types/react-syntax-highlighter-15.5.13.tgz}
 
   '@types/react@18.3.28':
     resolution: {integrity: sha1-CoWxpyQ7QljZ9ib0N5e6GOtfh4E=, tarball: http://r.npm.sankuai.com/@types/react/download/@types/react-18.3.28.tgz}
@@ -1846,6 +1862,9 @@ packages:
   fastq@1.20.1:
     resolution: {integrity: sha1-ynUKENySW8ixiDn9ID4+9LPO1nU=, tarball: http://r.npm.sankuai.com/fastq/download/fastq-1.20.1.tgz}
 
+  fault@1.0.4:
+    resolution: {integrity: sha1-6vz8Cm0hT8lGAeFw3ymVSk+ELxM=, tarball: http://r.npm.sankuai.com/fault/download/fault-1.0.4.tgz}
+
   fd-slicer@1.1.0:
     resolution: {integrity: sha1-JcfInLH5B3+IkbvmHY85Dq4lbx4=, tarball: http://r.npm.sankuai.com/fd-slicer/download/fd-slicer-1.1.0.tgz}
 
@@ -1906,6 +1925,10 @@ packages:
   form-data@4.0.5:
     resolution: {integrity: sha1-tJ5IhYBF/0y/awPhgFzrytNnkFM=, tarball: http://r.npm.sankuai.com/form-data/download/form-data-4.0.5.tgz}
     engines: {node: '>= 6'}
+
+  format@0.2.2:
+    resolution: {integrity: sha1-1hcBB+nv3E7TDJ3DkBbflCtctYs=, tarball: http://r.npm.sankuai.com/format/download/format-0.2.2.tgz}
+    engines: {node: '>=0.4.x'}
 
   forwarded@0.2.0:
     resolution: {integrity: sha1-ImmTZCiq1MFcfr6XeahL8LKoGBE=, tarball: https://r.npm.sankuai.com/forwarded/download/forwarded-0.2.0.tgz}
@@ -2065,11 +2088,23 @@ packages:
     resolution: {integrity: sha1-XlwrFbYDcKTHkww4Pft2vxe8QDw=, tarball: http://r.npm.sankuai.com/hasown/download/hasown-2.0.3.tgz}
     engines: {node: '>= 0.4'}
 
+  hast-util-parse-selector@4.0.0:
+    resolution: {integrity: sha1-NSh5+obiVhYDYDfdiTH7XzTLSic=, tarball: http://r.npm.sankuai.com/hast-util-parse-selector/download/hast-util-parse-selector-4.0.0.tgz}
+
   hast-util-to-jsx-runtime@2.3.6:
     resolution: {integrity: sha1-/zGJeq5Z9iIy4hWU6sfva2MzPpg=, tarball: http://r.npm.sankuai.com/hast-util-to-jsx-runtime/download/hast-util-to-jsx-runtime-2.3.6.tgz}
 
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha1-d3jtnTyS3Z6MXI9kiknCH8UctiE=, tarball: http://r.npm.sankuai.com/hast-util-whitespace/download/hast-util-whitespace-3.0.0.tgz}
+
+  hastscript@9.0.1:
+    resolution: {integrity: sha1-28hL72BR1ACENCwinEUc2dxWff8=, tarball: http://r.npm.sankuai.com/hastscript/download/hastscript-9.0.1.tgz}
+
+  highlight.js@10.7.3:
+    resolution: {integrity: sha1-aXJy45kTVuQMPKxWanTu9oF1ZTE=, tarball: http://r.npm.sankuai.com/highlight.js/download/highlight.js-10.7.3.tgz}
+
+  highlightjs-vue@1.0.0:
+    resolution: {integrity: sha1-/f6X++pjVOcO5E46lVh14RTbCG0=, tarball: http://r.npm.sankuai.com/highlightjs-vue/download/highlightjs-vue-1.0.0.tgz}
 
   hono@4.12.23:
     resolution: {integrity: sha1-mYuRZRaGFJ8Obtu4Vk1gTaBPPPg=, tarball: http://r.npm.sankuai.com/hono/download/hono-4.12.23.tgz}
@@ -2436,6 +2471,9 @@ packages:
   lowercase-keys@2.0.0:
     resolution: {integrity: sha1-JgPni3tLAAbLyi+8yKMgJVislHk=, tarball: http://r.npm.sankuai.com/lowercase-keys/download/lowercase-keys-2.0.0.tgz}
     engines: {node: '>=8'}
+
+  lowlight@1.20.0:
+    resolution: {integrity: sha1-3bGX0zRirQ2TvxnRe2wwGqOUGIg=, tarball: http://r.npm.sankuai.com/lowlight/download/lowlight-1.20.0.tgz}
 
   lru-cache@10.4.3:
     resolution: {integrity: sha1-QQ/IoXtw5ZgBPfJXwkRrfzOD8Rk=, tarball: http://r.npm.sankuai.com/lru-cache/download/lru-cache-10.4.3.tgz}
@@ -2920,6 +2958,10 @@ packages:
     engines: {node: '>=14'}
     hasBin: true
 
+  prismjs@1.30.0:
+    resolution: {integrity: sha1-2XCZadnU4WQD9vNIxjVTsZ8Jdak=, tarball: http://r.npm.sankuai.com/prismjs/download/prismjs-1.30.0.tgz}
+    engines: {node: '>=6'}
+
   process-nextick-args@2.0.1:
     resolution: {integrity: sha1-eCDZsWEgzFXKmud5JoCufbptf+I=, tarball: http://r.npm.sankuai.com/process-nextick-args/download/process-nextick-args-2.0.1.tgz}
 
@@ -2996,6 +3038,12 @@ packages:
     resolution: {integrity: sha1-t+V5w2V/I9BOzL5K0uWKjtUeflM=, tarball: http://r.npm.sankuai.com/react-refresh/download/react-refresh-0.17.0.tgz}
     engines: {node: '>=0.10.0'}
 
+  react-syntax-highlighter@16.1.1:
+    resolution: {integrity: sha1-koRZhV03X1z8jmRgceINVBzry1I=, tarball: http://r.npm.sankuai.com/react-syntax-highlighter/download/react-syntax-highlighter-16.1.1.tgz}
+    engines: {node: '>= 16.20.2'}
+    peerDependencies:
+      react: '>= 0.14.0'
+
   react@18.3.1:
     resolution: {integrity: sha1-SauJIAnFOTNiW9FrJTP8dUyrKJE=, tarball: http://r.npm.sankuai.com/react/download/react-18.3.1.tgz}
     engines: {node: '>=0.10.0'}
@@ -3021,6 +3069,9 @@ packages:
   reflect.getprototypeof@1.0.10:
     resolution: {integrity: sha1-xikhnnijMW2LYEx2XvaJlpZOe/k=, tarball: http://r.npm.sankuai.com/reflect.getprototypeof/download/reflect.getprototypeof-1.0.10.tgz}
     engines: {node: '>= 0.4'}
+
+  refractor@5.0.0:
+    resolution: {integrity: sha1-hdrwRIptlH9TYXlusiwxcz1h2QQ=, tarball: http://r.npm.sankuai.com/refractor/download/refractor-5.0.0.tgz}
 
   regexp.prototype.flags@1.5.4:
     resolution: {integrity: sha1-GtbGLUSiWQB+VbOXDgD3Ru+8qhk=, tarball: http://r.npm.sankuai.com/regexp.prototype.flags/download/regexp.prototype.flags-1.5.4.tgz}
@@ -3771,6 +3822,8 @@ snapshots:
       '@babel/core': 7.29.0
       '@babel/helper-plugin-utils': 7.28.6
 
+  '@babel/runtime@7.29.7': {}
+
   '@babel/template@7.28.6':
     dependencies:
       '@babel/code-frame': 7.29.0
@@ -4342,6 +4395,8 @@ snapshots:
       xmlbuilder: 15.1.1
     optional: true
 
+  '@types/prismjs@1.26.6': {}
+
   '@types/prop-types@15.7.15': {}
 
   '@types/qs@6.15.0': {}
@@ -4349,6 +4404,10 @@ snapshots:
   '@types/range-parser@1.2.7': {}
 
   '@types/react-dom@18.3.7(@types/react@18.3.28)':
+    dependencies:
+      '@types/react': 18.3.28
+
+  '@types/react-syntax-highlighter@15.5.13':
     dependencies:
       '@types/react': 18.3.28
 
@@ -5579,6 +5638,10 @@ snapshots:
     dependencies:
       reusify: 1.1.0
 
+  fault@1.0.4:
+    dependencies:
+      format: 0.2.2
+
   fd-slicer@1.1.0:
     dependencies:
       pend: 1.2.0
@@ -5659,6 +5722,8 @@ snapshots:
       es-set-tostringtag: 2.1.0
       hasown: 2.0.3
       mime-types: 2.1.35
+
+  format@0.2.2: {}
 
   forwarded@0.2.0: {}
 
@@ -5846,6 +5911,10 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  hast-util-parse-selector@4.0.0:
+    dependencies:
+      '@types/hast': 3.0.4
+
   hast-util-to-jsx-runtime@2.3.6:
     dependencies:
       '@types/estree': 1.0.8
@@ -5869,6 +5938,18 @@ snapshots:
   hast-util-whitespace@3.0.0:
     dependencies:
       '@types/hast': 3.0.4
+
+  hastscript@9.0.1:
+    dependencies:
+      '@types/hast': 3.0.4
+      comma-separated-tokens: 2.0.3
+      hast-util-parse-selector: 4.0.0
+      property-information: 7.1.0
+      space-separated-tokens: 2.0.2
+
+  highlight.js@10.7.3: {}
+
+  highlightjs-vue@1.0.0: {}
 
   hono@4.12.23: {}
 
@@ -6214,6 +6295,11 @@ snapshots:
       js-tokens: 4.0.0
 
   lowercase-keys@2.0.0: {}
+
+  lowlight@1.20.0:
+    dependencies:
+      fault: 1.0.4
+      highlight.js: 10.7.3
 
   lru-cache@10.4.3: {}
 
@@ -6860,6 +6946,8 @@ snapshots:
 
   prettier@3.8.3: {}
 
+  prismjs@1.30.0: {}
+
   process-nextick-args@2.0.1: {}
 
   progress@2.0.3: {}
@@ -6954,6 +7042,16 @@ snapshots:
 
   react-refresh@0.17.0: {}
 
+  react-syntax-highlighter@16.1.1(react@18.3.1):
+    dependencies:
+      '@babel/runtime': 7.29.7
+      highlight.js: 10.7.3
+      highlightjs-vue: 1.0.0
+      lowlight: 1.20.0
+      prismjs: 1.30.0
+      react: 18.3.1
+      refractor: 5.0.0
+
   react@18.3.1:
     dependencies:
       loose-envify: 1.4.0
@@ -6999,6 +7097,13 @@ snapshots:
       get-intrinsic: 1.3.0
       get-proto: 1.0.1
       which-builtin-type: 1.2.1
+
+  refractor@5.0.0:
+    dependencies:
+      '@types/hast': 3.0.4
+      '@types/prismjs': 1.26.6
+      hastscript: 9.0.1
+      parse-entities: 4.0.2
 
   regexp.prototype.flags@1.5.4:
     dependencies:
