@@ -545,6 +545,18 @@ ${toolsList || '- 当前没有可用工具'}
   }
 
   private async executeTool(toolCall: ToolCall): Promise<ToolResult> {
+    // 根因：工具参数解析错误时，返回错误结果而不是尝试执行
+    // 修复：检查参数中是否有解析错误标记
+    if (toolCall.arguments && typeof toolCall.arguments === 'object' && '_parseError' in toolCall.arguments) {
+      const errorMsg = (toolCall.arguments as any)._parseError
+      log.error('AgentLoop', `Tool call arguments parse error for ${toolCall.name}: ${errorMsg}`)
+      return {
+        toolCallId: toolCall.id,
+        success: false,
+        error: `工具参数解析失败: ${errorMsg}. 原始参数: ${(toolCall.arguments as any)._raw}`,
+        executionTime: 0
+      }
+    }
     return this.toolBridge.execute(toolCall)
   }
 
