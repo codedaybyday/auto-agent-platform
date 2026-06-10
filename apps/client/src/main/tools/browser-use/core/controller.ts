@@ -198,18 +198,32 @@ export class BrowserController {
       throw error
     }
 
-    // 最佳实践：等待 load 事件（DOM + 基本资源就绪）
-    // 不拦截样式，确保坐标计算正确
-    await page.goto(url, { waitUntil: 'load', timeout: 15000 })
+    // 优化：先快速等待 DOMContentLoaded（通常 1-3s）
+    // 然后尝试等待 load，但设置较短超时避免被慢资源阻塞
+    const startTime = Date.now()
+    let loadCompleted = false
 
-    // 可选：额外等待网络空闲，但设置较短超时避免慢资源阻塞
     try {
-      await page.waitForLoadState('networkidle', { timeout: 3000 })
-    } catch {
-      // 网络空闲超时不影响页面可用性
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 })
+      const domLoadedTime = Date.now() - startTime
+      log.info('BrowserController', `DOM loaded in ${domLoadedTime}ms`)
+
+      // DOM 就绪后，尝试等待完整 load，但只给 5s 缓冲
+      // 大多数功能性网站 DOM 就绪后即可操作
+      try {
+        await page.waitForLoadState('load', { timeout: 5000 })
+        loadCompleted = true
+        log.info('BrowserController', `Full load completed in ${Date.now() - startTime}ms`)
+      } catch {
+        // load 超时也没关系，DOM 已可用
+        log.info('BrowserController', `Load timeout, but DOM is ready after ${Date.now() - startTime}ms`)
+      }
+    } catch (error) {
+      // 连 DOMContentLoaded 都失败了
+      throw error
     }
 
-    return { success: true, message: `Navigated to ${page.url()}` }
+    return { success: true, message: `Navigated to ${page.url()}${loadCompleted ? '' : ' (DOM ready)'}` }
   }
 
   private async executeClick(

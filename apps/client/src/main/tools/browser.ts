@@ -98,11 +98,22 @@ Available actions:
       switch (args.action) {
         case 'navigate':
           if (!args.url) return 'Error: URL is required for navigate action'
-          await page.goto(args.url, {
-            waitUntil: args.wait_for || 'load'
-          })
-          this.state.currentUrl = page.url()
-          return `Navigated to ${this.state.currentUrl}`
+          try {
+            await page.goto(args.url, {
+              waitUntil: args.wait_for || 'domcontentloaded',
+              timeout: 30000
+            })
+            this.state.currentUrl = page.url()
+            return `Navigated to ${this.state.currentUrl}`
+          } catch (error) {
+            // 即使超时，也可能已经加载了足够的内容
+            const currentUrl = page.url()
+            if (currentUrl !== 'about:blank' && currentUrl !== this.state.currentUrl) {
+              this.state.currentUrl = currentUrl
+              return `Navigated to ${currentUrl} (partial load)`
+            }
+            throw error
+          }
 
         case 'click':
           if (!args.selector) return 'Error: selector is required for click action'
