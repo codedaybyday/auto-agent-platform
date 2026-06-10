@@ -89,6 +89,15 @@ export async function fetchAndSyncSessions(): Promise<SessionInfo[]> {
  */
 export async function createNewSession(mainWindow: BrowserWindow | null): Promise<{ sessionId: string } | null> {
   try {
+    // 根因：新建会话后，需要通过 WebSocket 通知服务器创建 AgentLoop
+    // 修复：先确保 WebSocket 连接，再创建会话
+    const { connectToServer, ws, generateId } = await import('./server-connection')
+
+    if (!ws || ws.readyState !== 1) {
+      console.log('[SessionManager] WebSocket not connected, connecting...')
+      await connectToServer(mainWindow)
+    }
+
     const data = await httpPost('/api/sessions', { title: '新会话' })
 
     if (!data.success || !data.data?.session) {
@@ -106,6 +115,29 @@ export async function createNewSession(mainWindow: BrowserWindow | null): Promis
     })
 
     notifySessionsUpdated(mainWindow)
+
+    // 通过 WebSocket 通知服务器创建会话（初始化 AgentLoop）
+    const { getPendingSessionResolve, setPendingSessionResolve } = await import('./server-connection')
+    const sessionPromise = new Promise<string>((resolve, reject) => {
+      setPendingSessionResolve(resolve)
+      setTimeout(() => {
+        if (getPendingSessionResolve() === resolve) {
+          setPendingSessionResolve(null)
+          reject(new Error('Session creation timeout'))
+        }
+      }, 10000)
+    })
+
+    ws!.send(JSON.stringify({
+      type: 'session.create',
+      messageId: generateId(),
+      timestamp: Date.now(),
+      payload: { sessionId: session.id }
+    }))
+
+    await sessionPromise
+    console.log('[SessionManager] Session initialized via WebSocket:', session.id)
+
     return { sessionId: session.id }
   } catch (error) {
     console.error('[SessionManager] Create session error:', error)
