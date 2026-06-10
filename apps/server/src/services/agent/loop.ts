@@ -572,12 +572,24 @@ ${toolsList || '- 当前没有可用工具'}
   }
 
   private addToolResult(toolCall: ToolCall, result: ToolResult): void {
+    let content: string
+
+    if (result.success) {
+      // 成功结果也限制大小
+      const dataStr = JSON.stringify(result.data)
+      content = dataStr.length > 2000
+        ? dataStr.slice(0, 2000) + `\n[... ${dataStr.length - 2000} chars truncated]`
+        : dataStr
+    } else {
+      // 错误消息智能截断：保留关键信息，去除堆栈
+      const errorMsg = result.error || 'Unknown error'
+      content = this.truncateErrorMessage(errorMsg)
+    }
+
     const toolMessage: Message = {
       id: this.generateId(),
       role: 'tool',
-      content: result.success
-        ? JSON.stringify(result.data)
-        : `Error: ${result.error}`,
+      content,
       toolResults: [result],
       timestamp: Date.now()
     }
@@ -585,6 +597,37 @@ ${toolsList || '- 当前没有可用工具'}
     this.shortTermMemory.addMessage(toolMessage)
     // 同步到 state
     this.state.messages.push(toolMessage)
+  }
+
+  /**
+   * 智能截断错误消息
+   * 保留：错误类型 + 简短描述 + 第一行堆栈
+   * 去除：后续堆栈跟踪
+   */
+  private truncateErrorMessage(error: string): string {
+    const MAX_LENGTH = 800
+
+    if (error.length <= MAX_LENGTH) {
+      return `Error: ${error}`
+    }
+
+    // 尝试提取错误类型和主要信息
+    const lines = error.split('\n')
+    const firstLine = lines[0] || ''
+
+    // 查找堆栈开始的位置（通常是 "    at " 行）
+    const stackStartIndex = lines.findIndex(line => line.trim().startsWith('at '))
+
+    if (stackStartIndex > 0) {
+      // 有堆栈跟踪，保留错误信息和第一行堆栈
+      const errorDesc = lines.slice(0, stackStartIndex).join('\n')
+      const firstStackLine = lines[stackStartIndex] || ''
+      const truncated = `${errorDesc}\n${firstStackLine}\n    [... stack trace truncated]`
+      return `Error: ${truncated}`
+    }
+
+    // 没有明显堆栈，直接截断
+    return `Error: ${firstLine.slice(0, MAX_LENGTH)}\n[... ${error.length - MAX_LENGTH} chars truncated]`
   }
 
   private generateId(): string {

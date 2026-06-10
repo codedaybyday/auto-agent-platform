@@ -113,9 +113,22 @@ export class ShortTermMemory {
       this.currentRound++
     }
 
+    // 预截断：防止超长消息直接进入内存
+    const MAX_MSG_LENGTH = 10000
+    let processedMessage = message
+    if (message.content && message.content.length > MAX_MSG_LENGTH) {
+      const originalLength = message.content.length
+      processedMessage = {
+        ...message,
+        content: message.content.slice(0, MAX_MSG_LENGTH) +
+          `\n[... message truncated, original: ${originalLength} chars]`
+      }
+      this.log('warn', `Message truncated from ${originalLength} to ${MAX_MSG_LENGTH} chars`)
+    }
+
     // 添加到消息列表
     this.messages.push({
-      ...message,
+      ...processedMessage,
       // @ts-ignore - 扩展字段标记轮次
       _round: this.currentRound
     })
@@ -213,6 +226,19 @@ export class ShortTermMemory {
    * 异步执行，不阻塞
    */
   private triggerCompression(): void {
+    const estimatedTokens = this.estimateTokens()
+
+    // 🚨 紧急截断：当 token 数超过危险阈值时，强制截断长消息
+    const DANGER_THRESHOLD = 80000
+    const MAX_THRESHOLD = 100000
+
+    if (estimatedTokens > MAX_THRESHOLD) {
+      this.log('warn', `🚨 Token count (${estimatedTokens}) exceeds MAX threshold (${MAX_THRESHOLD}), forcing emergency truncation`)
+      this.emergencyTruncate()
+    } else if (estimatedTokens > DANGER_THRESHOLD) {
+      this.log('warn', `⚠️ Token count (${estimatedTokens}) exceeds danger threshold (${DANGER_THRESHOLD}), consider starting new session`)
+    }
+
     // 计算需要压缩的轮次
     const compressibleRounds = this.getCompressibleRounds()
 
@@ -228,6 +254,34 @@ export class ShortTermMemory {
 
     // 清理超出 maxCompressedRounds 的早期压缩
     this.cleanupOldCompressions()
+  }
+
+  /**
+   * 🚨 紧急截断：当 token 数爆炸时强制截断长消息
+   * 保留最近 3 轮，截断其他消息
+   */
+  private emergencyTruncate(): void {
+    const cutoffRound = Math.max(0, this.currentRound - 3)
+    let truncatedCount = 0
+
+    for (let i = 0; i < this.messages.length; i++) {
+      const msg = this.messages[i]
+      // @ts-ignore
+      const msgRound = msg._round as number
+
+      // 只截断旧轮次的非系统消息
+      if (msgRound <= cutoffRound && msg.role !== 'system') {
+        const originalLength = msg.content?.length || 0
+        if (originalLength > 500) {
+          // 截断到 500 字符并添加标记
+          const truncated = msg.content!.slice(0, 500)
+          msg.content = truncated + `\n[... truncated ${originalLength - 500} chars]`
+          truncatedCount++
+        }
+      }
+    }
+
+    this.log('warn', `Emergency truncation completed: ${truncatedCount} messages truncated`)
   }
 
   /**
@@ -625,11 +679,31 @@ export class ShortTermMemory {
 
   /**
    * 估算单条消息的 token 数
+   * 优化：中文字符通常 1-2 字符 = 1 token，英文 3-4 字符 = 1 token
+   * 错误消息和代码通常 token 密度更高
    */
   private estimateMessageTokens(msg: Message): number {
     const content = msg.content || ''
-    // 粗略估计：平均 3 字符 = 1 token
-    return Math.floor(content.length / 3) + 10
+    if (content.length === 0) return 10
+
+    // 检测内容类型以选择更准确的估算
+    const hasStackTrace = content.includes('    at ') || content.includes('Error:')
+    const isMostlyChinese = (content.match(/[一-龥]/g)?.length || 0) / content.length > 0.3
+
+    let tokens: number
+    if (hasStackTrace) {
+      // 代码/堆栈：约 3.5 字符/token (更多符号)
+      tokens = Math.floor(content.length / 3.5)
+    } else if (isMostlyChinese) {
+      // 中文内容：约 2 字符/token
+      tokens = Math.floor(content.length / 2)
+    } else {
+      // 混合或英文：约 3 字符/token
+      tokens = Math.floor(content.length / 3)
+    }
+
+    // 加上消息结构的固定开销
+    return tokens + 15
   }
 
   private log(level: 'info' | 'warn' | 'error', message: string, meta?: any): void {

@@ -16,7 +16,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          'mcp-server': resolve(__dirname, 'src/main/service/mcp/server.ts')
+          'mcp-server': resolve(__dirname, 'src/main/services/mcp/server.ts')
         }
       }
     }
