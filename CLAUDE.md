@@ -10,14 +10,6 @@ pnpm dev:client       # Electron only
 pnpm dev:server       # Server only
 ```
 
-## Rules
-
-See `.claude/rules/`:
-- [architecture.md](.claude/rules/architecture.md) - System design & key files
-- [browser.md](.claude/rules/browser.md) - Browser automation
-- [docs.md](.claude/rules/docs.md) - Documentation standards
-- [troubleshooting.md](.claude/rules/troubleshooting.md) - Debugging & error resolution
-
 ## Mandatory
 
 ### Forbidden
