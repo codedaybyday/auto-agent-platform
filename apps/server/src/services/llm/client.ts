@@ -519,12 +519,19 @@ export class LLMClient {
             arguments: JSON.parse(chunk.function.arguments)
           })
         } catch (e) {
-          // 记录原始参数内容以便调试
-          console.error(`[LLMClient] Failed to parse tool call arguments for ${chunk.function?.name}:`, e)
+          // 根因：JSON 解析失败时静默丢弃，导致前端无反馈
+          // 修复：保留工具调用，但标记为解析错误，让上层处理
+          const errorMsg = `Failed to parse arguments: ${e instanceof Error ? e.message : String(e)}`
+          console.error(`[LLMClient] ${errorMsg}`)
           console.error(`[LLMClient] Raw arguments (length=${chunk.function.arguments?.length}):`,
             JSON.stringify(chunk.function.arguments))
-          console.error(`[LLMClient] Arguments preview:`,
-            chunk.function.arguments?.substring(0, 200))
+
+          // 仍然添加工具调用，但标记为错误状态
+          toolCalls.push({
+            id: chunk.id,
+            name: chunk.function.name,
+            arguments: { _parseError: errorMsg, _raw: chunk.function.arguments }
+          })
         }
       }
     }
