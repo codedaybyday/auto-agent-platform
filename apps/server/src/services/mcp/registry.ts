@@ -8,11 +8,22 @@ import { z } from 'zod'
 import { log } from '@auto-agent/shared-utils'
 import type { ToolCall, ToolResult } from '../../types/index.js'
 
+// 内置工具返回的结果（不含 toolCallId 和 executionTime，由调用方添加）
+export interface BuiltinToolResult {
+  success: boolean
+  data?: any
+  error?: string
+  metadata?: {
+    screenshot?: string
+    logs?: string[]
+  }
+}
+
 // 内置工具的执行函数类型
 export type BuiltinToolExecutor = (
   args: Record<string, unknown>,
   context: ToolExecutionContext
-) => Promise<ToolResult>
+) => Promise<BuiltinToolResult>
 
 export interface ToolExecutionContext {
   sessionId: string

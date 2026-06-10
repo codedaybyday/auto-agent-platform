@@ -203,7 +203,9 @@ export class AgentLoop extends EventEmitter {
       }
     } catch (error: any) {
       // 检查是否是用户主动停止
-      if (error.name === 'AbortError' || this.state.status === 'completed') {
+      // 根因：error 可能不是 Error 实例（如抛出的是字符串或对象），直接访问 .name 会报错
+      // 修复：使用可选链操作符 ?. 安全访问 name 属性
+      if (error?.name === 'AbortError' || this.state.status === 'completed') {
         log.info('AgentLoop', 'Agent loop stopped by user')
         this.state.status = 'completed'
         this.emit('run_stopped', {
@@ -268,9 +270,12 @@ export class AgentLoop extends EventEmitter {
     this.state.status = 'completed'
 
     // 中止 LLM 请求
-    if (this.abortController) {
-      this.abortController.abort()
-      this.abortController = undefined
+    // 根因：直接使用 this.abortController 存在竞态条件
+    // 修复：使用本地变量引用，避免在 abort 后 this.abortController 被其他代码修改
+    const controller = this.abortController
+    if (controller) {
+      this.abortController = undefined  // 先清空，避免重复 abort
+      controller.abort()
     }
 
     // 中止 LLMClient 中的请求
@@ -422,18 +427,20 @@ ${toolsList || '- 当前没有可用工具'}
 2. 如果是问问题 → 直接回答
 3. 如果是指令 → 选择合适的工具执行
 
-## 示例
+## 核心原则
 
-用户："什么是二叉树" → 直接解释概念
-用户："打开百度搜索二叉树" → 使用 browser 工具
-用户："如何学习 Python" → 直接给出学习路径建议
-用户："创建一个 Python 文件" → 使用 file_write 工具
+**默认直接回答。只有用户明确要求操作外部系统时才使用工具。**
+
+询问（直接回答）：
+- "什么是XXX"、"如何实现XXX"、"写个XXX的代码" → 直接回复
+
+操作（使用工具）：
+- "创建文件"、"保存到文件"、"执行命令" → 使用对应工具
 
 ## 禁止事项
 
 - 不要以"确认数据"为由使用工具回答知识性问题
-- 不要主动提供超出用户请求的操作
-- 不要混淆"用户想了解某事"和"用户想做某事"`
+- 不要主动提供超出用户请求的操作`
   }
 
   private buildContext(): Message[] {

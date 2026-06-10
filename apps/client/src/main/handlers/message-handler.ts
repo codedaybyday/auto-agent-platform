@@ -42,7 +42,9 @@ async function getOrCreateMCPClient(sessionId: string): Promise<Client> {
     env: {
       ...process.env,
       NODE_ENV: process.env.NODE_ENV || 'development',
-      MCP_SESSION_ID: sessionId
+      MCP_SESSION_ID: sessionId,
+      AUTOAGENT_USER_ID: 'desktop-user', // TODO: 从主进程获取实际用户ID
+      AUTOAGENT_WORKSPACE_PATH: process.env.AUTOAGENT_WORKSPACE_PATH
     }
   })
 

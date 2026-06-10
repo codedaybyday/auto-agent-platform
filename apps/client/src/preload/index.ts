@@ -83,6 +83,8 @@ export interface AgentAPI {
   getMCPConfig: () => Promise<{ success: boolean; config?: MCPUserConfig; error?: string }>
   /** 保存 MCP 配置 */
   saveMCPConfig: (config: MCPUserConfig) => Promise<{ success: boolean; error?: string }>
+  /** 保存代码到文件 */
+  saveCodeToFile: (filename: string, content: string) => Promise<{ success: boolean; error?: string }>
 }
 
 /**
@@ -176,7 +178,9 @@ const agentAPI: AgentAPI = {
   logout: () => ipcRenderer.invoke('sso:logout'),
   // mcp
   getMCPConfig: () => ipcRenderer.invoke('mcp:get_config'),
-  saveMCPConfig: (config: MCPUserConfig) => ipcRenderer.invoke('mcp:save_config', config)
+  saveMCPConfig: (config: MCPUserConfig) => ipcRenderer.invoke('mcp:save_config', config),
+  // file
+  saveCodeToFile: (filename: string, content: string) => ipcRenderer.invoke('file:save_code', filename, content)
 }
 
 const api = {

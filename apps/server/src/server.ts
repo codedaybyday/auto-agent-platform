@@ -52,7 +52,18 @@ export function startServer(): ServerContext {
   }, 5 * 60 * 1000)
 
   // 启动服务器
-  const PORT = config.port || 3000
+  const PORT = config.port || 3001
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      log.error('Server', `Port ${PORT} is already in use`)
+      log.info('Server', `Run "pnpm kill:server" to free the port, or set a different PORT in .env`)
+      process.exit(1)
+    } else {
+      log.error('Server', `Server error: ${err.message}`)
+      process.exit(1)
+    }
+  })
 
   server.listen(PORT, () => {
     log.success('Server', `Server running on port ${PORT}`)
