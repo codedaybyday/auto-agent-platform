@@ -150,3 +150,7 @@ This project includes a custom Claude command:
 ### 方案设计原则：
 1. 准确性 - 修改影响可控（如加流式输出需删非流式）
 2. 可扩展性 - 禁止case by case，提取共性给通用方案
+
+### 文档规范
+1. 文档编写 - 规范、简洁、清晰
+2. 文档位置 - 放到 docs下按照分类存在
