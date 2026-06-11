@@ -52,8 +52,33 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
           return { success: true, sessionId }
         }
 
-        log.info('Main', 'Creating new session...')
-        
+        // 先加载历史会话列表
+        log.info('Main', 'Fetching existing sessions...')
+        const existingSessions = await fetchAndSyncSessions()
+        log.info('Main', `Found ${existingSessions.length} existing sessions`)
+
+        if (existingSessions.length > 0) {
+          log.info('Main', `First session: ${existingSessions[0].id}, ${existingSessions[0].title}`)
+          // 使用第一个历史会话
+          const firstSession = existingSessions[0]
+          setCurrentSessionId(firstSession.id)
+          log.success('Main', `Using existing session from server: ${firstSession.id}`)
+
+          // 通过 WebSocket 通知服务端初始化该会话的 AgentLoop
+          const { ws: wsInstance } = await import('../core/server-connection')
+          wsInstance!.send(JSON.stringify({
+            type: 'session.create',
+            messageId: generateId(),
+            timestamp: Date.now(),
+            payload: { sessionId: firstSession.id }
+          }))
+
+          return { success: true, sessionId: firstSession.id }
+        }
+
+        // 没有历史会话，创建新会话
+        log.info('Main', 'No existing sessions, creating new session...')
+
         const sessionPromise = new Promise<string>((resolve, reject) => {
           setPendingSessionResolve(resolve)
           setTimeout(() => {

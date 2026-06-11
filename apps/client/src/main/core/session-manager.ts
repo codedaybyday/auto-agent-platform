@@ -65,9 +65,15 @@ export function notifySessionsUpdated(mainWindow: BrowserWindow | null): void {
  */
 export async function fetchAndSyncSessions(): Promise<SessionInfo[]> {
   try {
+    console.log('[SessionManager] Fetching sessions from server...')
     const data = await httpGet('/api/sessions')
-    
-    for (const session of data.data?.sessions || []) {
+    console.log('[SessionManager] Server response:', data)
+
+    const serverSessions = data.data?.sessions || []
+    console.log(`[SessionManager] Got ${serverSessions.length} sessions from server`)
+
+    for (const session of serverSessions) {
+      console.log('[SessionManager] Adding session:', session.id, session.title)
       addSession({
         id: session.id,
         title: session.title || `会话 ${sessions.size + 1}`,
@@ -76,7 +82,9 @@ export async function fetchAndSyncSessions(): Promise<SessionInfo[]> {
       })
     }
 
-    return getAllSessions()
+    const allSessions = getAllSessions()
+    console.log(`[SessionManager] Total local sessions: ${allSessions.length}`)
+    return allSessions
   } catch (error) {
     console.error('[SessionManager] Failed to fetch sessions:', error)
     // 失败时返回本地缓存

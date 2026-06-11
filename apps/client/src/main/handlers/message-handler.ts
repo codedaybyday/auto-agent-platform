@@ -6,7 +6,8 @@ import {
   getCurrentSessionId,
   setCurrentSessionId,
   addSession,
-  notifySessionsUpdated
+  notifySessionsUpdated,
+  updateSessionTitle
 } from '../core/session-manager'
 import { cleanupSessionTools } from '../tools/executor'
 import { generateId, getPendingConnectResolve, setPendingConnectResolve, getPendingSessionResolve, setPendingSessionResolve, sendMessage } from '../core/server-connection'
@@ -118,6 +119,10 @@ export async function handleServerMessage(message: any, mainWindow: BrowserWindo
 
     case 'session.create_ack':
       await handleSessionCreateAck(message, mainWindow)
+      break
+
+    case 'session.title_updated':
+      handleSessionTitleUpdated(message, mainWindow)
       break
   }
 }
@@ -275,7 +280,7 @@ async function handleSessionCreateAck(message: any, mainWindow: BrowserWindow | 
   if (message.payload?.session?.id) {
     const session = message.payload.session
     const sessionId = session.id
-    
+
     setCurrentSessionId(sessionId)
     console.log('[Main] Session created:', sessionId)
 
@@ -297,4 +302,28 @@ async function handleSessionCreateAck(message: any, mainWindow: BrowserWindow | 
       setPendingSessionResolve(null)
     }
   }
+}
+
+function handleSessionTitleUpdated(message: any, mainWindow: BrowserWindow | null) {
+  const { sessionId, payload } = message
+  const title = payload?.title
+
+  if (!sessionId || !title) {
+    console.log('[Main] Invalid session.title_updated message:', message)
+    return
+  }
+
+  console.log(`[Main] Session ${sessionId} title updated to: "${title}"`)
+
+  // 更新本地会话缓存
+  updateSessionTitle(sessionId, title)
+
+  // 通知渲染进程标题已更新
+  mainWindow?.webContents.send('agent:session_title_updated', {
+    sessionId,
+    title
+  })
+
+  // 同时更新会话列表
+  notifySessionsUpdated(mainWindow)
 }

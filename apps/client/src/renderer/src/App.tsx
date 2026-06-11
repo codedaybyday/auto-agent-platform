@@ -267,6 +267,15 @@ function App(): JSX.Element {
       setCurrentSessionId(sessionId)
     })
 
+    const unsubscribeSessionTitleUpdated = window.api.agent.onSessionTitleUpdated((data: { sessionId: string; title: string }) => {
+      // 更新会话列表中的标题
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === data.sessionId ? { ...s, title: data.title } : s
+        )
+      )
+    })
+
     return () => {
       unsubscribeMessage()
       unsubscribeProcessing()
@@ -277,6 +286,7 @@ function App(): JSX.Element {
       unsubscribeHistoryCleared()
       unsubscribeSessionsUpdated()
       unsubscribeSessionSwitched()
+      unsubscribeSessionTitleUpdated()
     }
   }, [])
 
@@ -308,8 +318,20 @@ function App(): JSX.Element {
       setSessions(result.sessions)
       if (result.sessions.length > 0 && !currentSessionIdRef.current) {
         const firstSession = result.sessions[0]
+
+        // 先清空消息，再设置当前会话
+        setMessages([])
         setCurrentSessionId(firstSession.id)
         currentSessionIdRef.current = firstSession.id
+
+        // 加载第一个会话的消息
+        const msgResult = await window.api.agent.getSessionMessages(firstSession.id)
+        if (msgResult.success && msgResult.messages) {
+          const uniqueMessages = Array.from(
+            new Map(msgResult.messages.map((m: Message) => [m.id, m])).values()
+          )
+          setMessages(uniqueMessages)
+        }
       }
     }
   }
@@ -330,6 +352,9 @@ function App(): JSX.Element {
   const handleSwitchSession = async (sessionId: string) => {
     const result = await window.api.agent.switchSession(sessionId)
     if (result.success) {
+      // 先清空消息，避免在加载期间显示旧消息
+      setMessages([])
+
       setCurrentSessionId(sessionId)
       currentSessionIdRef.current = sessionId
       setView('chat')

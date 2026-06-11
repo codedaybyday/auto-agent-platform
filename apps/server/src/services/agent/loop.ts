@@ -38,6 +38,7 @@ export class AgentLoop extends EventEmitter {
   private wsClient: any = null
   private shortTermMemory: ShortTermMemory
   private abortController?: AbortController
+  private onMessageAdded?: (message: Message) => void
 
   constructor(
     sessionId: string,
@@ -75,6 +76,13 @@ export class AgentLoop extends EventEmitter {
       },
       debug: process.env.DEBUG_MEMORY === 'true'
     })
+  }
+
+  /**
+   * 设置消息添加回调（用于持久化）
+   */
+  setOnMessageAdded(callback: (message: Message) => void): void {
+    this.onMessageAdded = callback
   }
 
   /**
@@ -565,6 +573,11 @@ ${toolsList || '- 当前没有可用工具'}
     this.shortTermMemory.addMessage(message)
     // 同步到 state 保持兼容性
     this.state.messages.push(message)
+
+    // 持久化到 SQLite
+    if (this.onMessageAdded) {
+      this.onMessageAdded(message)
+    }
 
     // 打印短期记忆统计
     const stats = this.shortTermMemory.getStats()
