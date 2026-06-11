@@ -76,6 +76,8 @@ export interface AgentAPI {
   onSessionsUpdated: (callback: (sessions: Session[]) => void) => () => void
   /** 监听会话切换 */
   onSessionSwitched: (callback: (sessionId: string) => void) => () => void
+  /** 监听会话标题更新 */
+  onSessionTitleUpdated: (callback: (data: { sessionId: string; title: string }) => void) => () => void
   login: () => Promise<{ success: boolean; error?: string }>
   whoami: () => Promise<{ success: boolean; error?: string, data: any }>
   logout: () => Promise<{ success: boolean; error?: string }>
@@ -171,6 +173,12 @@ const agentAPI: AgentAPI = {
     const handler = (_event: Electron.IpcRendererEvent, sessionId: string) => callback(sessionId)
     ipcRenderer.on('agent:session_switched', handler)
     return () => ipcRenderer.removeListener('agent:session_switched', handler)
+  },
+
+  onSessionTitleUpdated: (callback: (data: { sessionId: string; title: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, data: { sessionId: string; title: string }) => callback(data)
+    ipcRenderer.on('agent:session_title_updated', handler)
+    return () => ipcRenderer.removeListener('agent:session_title_updated', handler)
   },
   // sso
   login: () => ipcRenderer.invoke('sso:login'),

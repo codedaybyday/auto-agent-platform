@@ -434,8 +434,25 @@ export class WebSocketGateway {
     }
 
     // 绑定 AgentLoop 事件到事件总线（幂等，多次调用不会重复绑定）
-    if (sessionId) {
-      this.eventBus.bindAgentLoop(agentLoop, sessionId)
+    // 修复：使用 session.id 而非 message.sessionId，避免当 getOrCreateSession 返回不同会话时的绑定错误
+    if (session) {
+      this.eventBus.bindAgentLoop(agentLoop, session.id)
+    }
+
+    // 检查是否是首次消息，如果是则异步生成标题
+    const messages = agentLoop.getMessages()
+    const isFirstMessage = messages.length === 0
+    if (isFirstMessage && sessionId) {
+      this.sessionManager.updateSessionTitleAsync(sessionId, content, (sid, title) => {
+        // 通过 WebSocket 通知前端标题已更新
+        this.sendToUser(connection.userId, {
+          type: 'session.title_updated' as MessageType,
+          messageId: this.generateId(),
+          timestamp: Date.now(),
+          sessionId: sid,
+          payload: { title }
+        })
+      })
     }
 
     // 启动 Agent Loop

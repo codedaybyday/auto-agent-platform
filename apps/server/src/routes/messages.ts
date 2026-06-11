@@ -120,7 +120,8 @@ export function createMessagesRouter(deps: MessagesDeps): Router {
       }
 
       const agentLoop = deps.sessionManager.getAgentLoop(sessionId)
-      const messages = agentLoop?.getMessages() || session.messages
+      const agentMessages = agentLoop?.getMessages()
+      const messages = agentMessages && agentMessages.length > 0 ? agentMessages : session.messages
 
       res.json({
         success: true,
