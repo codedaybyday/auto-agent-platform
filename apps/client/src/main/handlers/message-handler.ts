@@ -35,10 +35,13 @@ async function getOrCreateMCPClient(sessionId: string): Promise<Client> {
     ? resolve(process.cwd(), 'src/main/services/mcp/server.ts')
     : resolve(process.cwd(), 'out/main/services/mcp/server.js')
 
+  // 在 dev 模式下解析 tsx 的完整路径，避免 npx 找不到 tsx 的问题
+  const tsxPath = resolve(process.cwd(), 'node_modules/.bin/tsx')
+
   const transport = new StdioClientTransport({
-    command: isDev ? 'npx' : 'node',
+    command: isDev ? tsxPath : 'node',
     args: isDev
-      ? ['tsx', mcpServerPath]
+      ? [mcpServerPath]
       : ['--experimental-specifier-resolution=node', mcpServerPath],
     env: {
       ...process.env,
