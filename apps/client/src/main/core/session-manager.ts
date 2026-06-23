@@ -67,10 +67,10 @@ export async function fetchAndSyncSessions(): Promise<SessionInfo[]> {
   try {
     console.log('[SessionManager] Fetching sessions from server...')
     const data = await httpGet('/api/sessions')
-    console.log('[SessionManager] Server response:', data)
+    console.log('[SessionManager] Server response:', JSON.stringify(data?.data?.sessions?.map((s: any) => ({ id: s.id, title: s.title })) || []))
 
     const serverSessions = data.data?.sessions || []
-    console.log(`[SessionManager] Got ${serverSessions.length} sessions from server`)
+    console.log(`[SessionManager] Got ${serverSessions.length} sessions from server, current local count: ${sessions.size}`)
 
     for (const session of serverSessions) {
       console.log('[SessionManager] Adding session:', session.id, session.title)

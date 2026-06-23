@@ -149,6 +149,7 @@ export class SessionStorage {
       session.metadata.toolUsageCount,
       titleGenerated ? 1 : 0
     )
+    console.log(`[SessionStorage] 💾 saveSession: id=${session.id}, title=${session.title}, userId=${session.userId}, totalSessions=${(this.db!.prepare('SELECT COUNT(*) as c FROM sessions').get() as any).c}`)
   }
 
   /**
@@ -174,6 +175,20 @@ export class SessionStorage {
     ).all(userId) as any[]
 
     return rows.map(row => this.rowToSession(row))
+  }
+
+  /**
+   * 获取所有唯一的用户 ID
+   * 用于重启时重建用户会话索引
+   */
+  getAllUserIds(): string[] {
+    if (!this.db) return []
+
+    const rows = this.db.prepare(
+      'SELECT DISTINCT user_id FROM sessions'
+    ).all() as any[]
+
+    return rows.map((r: any) => r.user_id)
   }
 
   /**
@@ -252,6 +267,7 @@ export class SessionStorage {
 
     // 更新会话的 updated_at
     this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId)
+    console.log(`[SessionStorage] 💾 saveMessage: id=${message.id}, sessionId=${sessionId}, role=${message.role}, preview=${message.content?.substring(0, 50)}`)
   }
 
   /**

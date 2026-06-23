@@ -169,3 +169,24 @@ async getOrCreateSession(userId: string, sessionId?: string): Promise<{ session:
 | 日期 | 作者 | 变更内容 |
 |------|------|----------|
 | 2025-06-11 | Claude | 创建根因分析报告 |
+| 2026-06-23 | Claude | 修复重启后会话合并问题（3处修复，见附录） |
+
+## 附录：重启后会话合并修复 (2026-06-23)
+
+### 问题
+
+虽已修复运行时串扰，但重启后仍出现所有会话消息合并到一个会话的问题。
+
+### 新增根因
+
+1. **`loadPersistedSessions()` 是空操作**：重启后 `sessionMetadata`、`userSessions`、`localSessions` 全部为空，仅靠 `getUserSessions()` 懒加载恢复元数据，不恢复 AgentLoop 和索引
+2. **`getOrCreateSession` 静默回退**：当 `sessionId` 指定但会话不存在时，静默返回最新会话，导致消息归入错误会话
+3. **缺少 `getAllUserIds()`**：无法在启动时枚举所有用户以重建索引
+
+### 修复内容
+
+1. `apps/server/src/services/session-storage.ts` — 新增 `getAllUserIds()` 方法
+2. `apps/server/src/services/agent/session.ts`:
+   - `loadPersistedSessions()` — 启动时从 SQLite 加载所有会话元数据和消息到内存，重建 `userSessions` 索引
+   - `getOrCreateSession()` — sessionId 存在但找不到时抛出错误，不再静默回退
+   - `getSession()` — 修复 `null`/`undefined` 类型不兼容问题

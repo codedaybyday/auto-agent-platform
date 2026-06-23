@@ -383,6 +383,8 @@ export class WebSocketGateway {
     const sessionId = message.sessionId || message.payload?.sessionId
     const { content } = message.payload || {}
 
+    console.log(`[WebSocket] 🚀 handleAgentRun: raw.sessionId=${message.sessionId}, payload.sessionId=${message.payload?.sessionId}, resolved=${sessionId}`)
+
     if (!content) {
       throw new Error('Missing content')
     }
@@ -419,6 +421,7 @@ export class WebSocketGateway {
     }
 
     const { agentLoop, session } = await this.sessionManager.getOrCreateSession(connection.userId, sessionId)
+    console.log(`[WebSocket] 📨 agent.run routed to session: ${session.id}, title=${session.title}, agentLoop=${!!agentLoop}, messages=${session.messages?.length || 0}`)
 
     // 绑定 WebSocket 用于工具调用（双向通信）
     agentLoop.bindWebSocket(connection)

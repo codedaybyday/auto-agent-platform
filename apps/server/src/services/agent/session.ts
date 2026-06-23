@@ -58,13 +58,39 @@ export class SessionManager {
   }
 
   /**
-   * 加载持久化的会话
+   * 加载持久化的会话到内存
+   *
+   * 根因：之前此方法为空操作，重启后 sessionMetadata、userSessions、localSessions
+   * 全部为空，仅靠 getUserSessions() 懒加载。懒加载仅恢复元数据，不恢复 AgentLoop，
+   * 若懒加载过程中 sessionId 传递有误，消息便归入错误会话。
+   *
+   * 修复：启动时从 SQLite 加载所有用户的会话元数据和消息到内存，
+   * 并重建 userSessions 索引，确保重启后会话隔离正确。
    */
   private loadPersistedSessions(): void {
-    // 从存储加载所有会话到内存
-    // 注意：这里需要一个方法来获取所有用户，暂时简单处理
-    // 实际使用时通过 getUserSessions(userId) 按需加载
-    console.log('[SessionManager] Storage initialized, sessions will be loaded on-demand')
+    const stats = this.storage.getStats()
+    console.log(`[SessionManager] Loading persisted sessions: ${stats.totalSessions} sessions, ${stats.totalMessages} messages`)
+
+    const userIds = this.storage.getAllUserIds()
+    for (const userId of userIds) {
+      const sessions = this.storage.getUserSessions(userId)
+      const sessionIds = new Set<string>()
+
+      for (const session of sessions) {
+        // 加载消息到会话对象
+        session.messages = this.storage.getSessionMessages(session.id)
+
+        // 恢复到内存元数据缓存
+        this.sessionMetadata.set(session.id, session)
+        sessionIds.add(session.id)
+
+        // AgentLoop 不在启动时恢复（懒创建），避免资源浪费
+      }
+
+      // 重建用户->会话索引
+      this.userSessions.set(userId, sessionIds)
+      console.log(`[SessionManager] Loaded ${sessions.length} sessions for user ${userId}`)
+    }
   }
 
   /**
@@ -120,8 +146,9 @@ export class SessionManager {
 
     // 持久化到 SQLite
     this.storage.saveSession(session)
-
-    console.log(`[SessionManager] Created session ${sessionId} for user ${userId}`)
+    // 验证持久化成功
+    const verifyRead = this.storage.getSession(sessionId)
+    console.log(`[SessionManager] ✅ Created session ${sessionId} for user ${userId}, persisted=${!!verifyRead}, dbTotal=${this.storage.getStats().totalSessions}`)
 
     return session
   }
@@ -144,16 +171,23 @@ export class SessionManager {
           // 设置消息持久化回调
           agentLoop.setOnMessageAdded((message) => {
             this.storage.saveMessage(session.id, message)
+            console.log(`[SessionManager] 💾 Message saved to session ${session.id}, role=${message.role}, id=${message.id}`)
           })
           this.localSessions.set(session.id, agentLoop)
-          console.log(`[SessionManager] Created new AgentLoop for existing session: ${session.id}`)
+          console.log(`[SessionManager] 🔄 Created new AgentLoop for persisted session: ${session.id}`)
         }
+        console.log(`[SessionManager] 🔍 getOrCreateSession: matched sessionId=${sessionId}, using session.id=${session.id}, agentLoop=${!!agentLoop}`)
         return { session, agentLoop }
       }
-      // session 不存在，继续下面的逻辑创建新会话
+      // 根因：sessionId 指定了但会话不存在，之前静默回退到最新会话，
+      // 导致消息被保存到错误的会话中（"会话合并"现象）
+      // 修复：sessionId 存在但找不到时抛出明确错误，不再静默回退
+      console.error(`[SessionManager] ❌ Session not found: ${sessionId}, current user=${userId}, known sessions: ${[...this.sessionMetadata.keys()].join(', ')}`)
+      throw new Error(`Session not found: ${sessionId}`)
     }
 
-    // 没有指定 sessionId 或 session 不存在，尝试获取用户最新的已有会话
+    // 没有指定 sessionId，按现有逻辑处理（复用最新会话或创建新会话）
+    console.log(`[SessionManager] ⚠️ getOrCreateSession called without sessionId for user=${userId}`)
     const userSessions = this.getUserSessions(userId)
     if (userSessions.length > 0) {
       const latestSession = userSessions[0]
@@ -186,19 +220,19 @@ export class SessionManager {
    */
   getSession(sessionId: string): Session | null {
     // 先从内存获取
-    let session = this.sessionMetadata.get(sessionId)
-    if (session) {
-      return session
+    const memSession = this.sessionMetadata.get(sessionId)
+    if (memSession) {
+      return memSession
     }
 
     // 从 SQLite 加载
-    session = this.storage.getSession(sessionId)
-    if (session) {
+    const persisted = this.storage.getSession(sessionId)
+    if (persisted) {
       // 加载消息
-      session.messages = this.storage.getSessionMessages(sessionId)
+      persisted.messages = this.storage.getSessionMessages(sessionId)
       // 同步到内存
-      this.sessionMetadata.set(sessionId, session)
-      return session
+      this.sessionMetadata.set(sessionId, persisted)
+      return persisted
     }
 
     return null
