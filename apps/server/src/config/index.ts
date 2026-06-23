@@ -42,6 +42,15 @@ export const config = {
     isLocal: process.env.LLM_BASE_URL?.includes('localhost') || process.env.LLM_BASE_URL?.includes('127.0.0.1') || false
   },
 
+  // 运行环境：development | production
+  env: (process.env.AUTO_AGENT_ENV || 'development') as 'development' | 'production',
+
+  // 数据存储目录（会话、消息、文件等）
+  // 可通过 AUTO_AGENT_DATA_DIR 环境变量直接指定，否则由 env 决定：
+  //   development → ~/Library/Application Support/auto-agent-test/data/
+  //   production  → ~/Library/Application Support/auto-agent/data/
+  dataDir: process.env.AUTO_AGENT_DATA_DIR || '',
+
   // 限流配置
   rateLimit: {
     // 全局HTTP请求: 默认 166/s (10000/分钟)

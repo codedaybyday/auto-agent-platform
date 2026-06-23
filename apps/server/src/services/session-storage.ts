@@ -6,30 +6,68 @@
  * - 自动迁移
  * - 支持会话标题、消息历史、元数据
  * - 定期清理过期会话
+ *
+ * 存储路径优先级（统一由 config 模块管理）:
+ * 1. 环境变量 AUTO_AGENT_DATA_DIR — 直接指定数据目录
+ * 2. config.dataDir + 'sessions.db'
+ * 3. OS 标准数据目录 + <app>/data/sessions.db
  */
 
 import Database from 'better-sqlite3'
 import path from 'path'
+import os from 'os'
 import fs from 'node:fs'
+import { config } from '../config/index.js'
 import type { Session, Message } from '../types/index.js'
+
+/**
+ * 获取默认数据库路径
+ *
+ * 由 AUTO_AGENT_ENV 决定应用名：
+ *   development → auto-agent-test
+ *   production  → auto-agent
+ *
+ * 可通过 AUTO_AGENT_DATA_DIR 环境变量直接覆盖。
+ */
+function getDefaultDbPath(): string {
+  // 优先级 1: 直接指定数据目录
+  if (config.dataDir) {
+    return path.join(config.dataDir, 'sessions.db')
+  }
+
+  // 优先级 2: 按 env 决定应用名 + OS 标准路径
+  const appName = config.env === 'production' ? 'auto-agent' : 'auto-agent-test'
+  const platform = process.platform
+  let dataDir: string
+
+  if (platform === 'darwin') {
+    dataDir = path.join(os.homedir(), 'Library', 'Application Support', appName, 'data')
+  } else if (platform === 'win32') {
+    dataDir = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), appName, 'data')
+  } else {
+    dataDir = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), appName, 'data')
+  }
+
+  return path.join(dataDir, 'sessions.db')
+}
 
 export interface SessionStorageConfig {
   /** 数据库文件路径 */
-  dbPath: string
+  dbPath?: string
   /** 会话最大保存时间（毫秒），默认 30 天 */
-  maxSessionAge: number
+  maxSessionAge?: number
   /** 是否启用 WAL 模式 */
-  walMode: boolean
+  walMode?: boolean
 }
 
 export class SessionStorage {
   private db: Database.Database | null = null
-  private config: SessionStorageConfig
+  private config: Required<Omit<SessionStorageConfig, 'dbPath'>> & { dbPath: string }
   private initialized = false
 
   constructor(config: Partial<SessionStorageConfig> = {}) {
     this.config = {
-      dbPath: config.dbPath || path.join(process.cwd(), 'data', 'sessions.db'),
+      dbPath: config.dbPath || getDefaultDbPath(),
       maxSessionAge: config.maxSessionAge || 30 * 24 * 60 * 60 * 1000, // 30天
       walMode: config.walMode !== false // 默认启用 WAL 模式
     }

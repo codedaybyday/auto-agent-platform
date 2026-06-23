@@ -37,6 +37,9 @@ pnpm-debug.log*
 # Coverage
 coverage/
 
+# Runtime data (SQLite, files, etc.)
+data/
+
 # Temporary files
 *.tmp
 
