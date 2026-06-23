@@ -13,7 +13,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { spawn } from 'child_process'
 import { BrowserSecurityGuard, defaultSecurityGuard, SecurityError } from '../tools/browser-use/security/browser-security.js'
-import { SSO_CONFIG, readSSOToken } from '../sso-config.js'
+
 
 interface AgentBrowserConfig {
   headless?: boolean
@@ -196,29 +196,15 @@ export class AgentBrowserService {
 
   /**
    * 导航到 URL
-   * 使用 --headers 在初始请求中携带 SSO cookie，避免刷新
    */
   async navigate(sessionId: string, url: string): Promise<{ success: boolean; result: string }> {
     try {
       // 安全检查
       this.securityGuard.assertNavigationAllowed({ url, timestamp: Date.now() })
 
-      // 获取 SSO token 用于设置 cookie
-      const token = await readSSOToken()
       const args = ['open', url, '--json']
 
-      // 如果有 access_token，通过 --headers 设置 Cookie
-      if (token?.access_token) {
-        const cookieName = SSO_CONFIG.COOKIE_NAME
-        const cookieValue = token.access_token
-        const cookieHeader = `${cookieName}=${cookieValue}`
-        args.push('--headers', JSON.stringify({ Cookie: cookieHeader }))
-        console.log(`[AgentBrowserService] Navigating with SSO cookie in header: ${cookieName}`)
-      } else {
-        console.log('[AgentBrowserService] No SSO token found, navigating without cookie')
-      }
-
-      // 执行导航（携带 cookie header）
+      // 执行导航
       const navResult = await this.executeCommand(sessionId, args, 60000)
 
       if (navResult.success) {
@@ -238,64 +224,6 @@ export class AgentBrowserService {
         }
       }
       throw error
-    }
-  }
-
-  /**
-   * 注入 SSO Cookie
-   * Cookie 格式: ${clientId}_ssoid = access_token
-   * 使用 --domain 参数设置跨子域的 cookie
-   */
-  private async injectSSOCookie(sessionId: string, url: string): Promise<void> {
-    try {
-      const token = await readSSOToken()
-      if (!token?.access_token) {
-        console.log('[AgentBrowserService] No SSO token found, skipping cookie injection')
-        return
-      }
-
-      const cookieName = SSO_CONFIG.COOKIE_NAME
-      const cookieValue = token.access_token
-
-      // 解析域名用于 cookie domain
-      const urlObj = new URL(url)
-      const hostname = urlObj.hostname
-      // 使用根域名以支持跨子域（如 .sankuai.com）
-      const domainParts = hostname.split('.')
-      const rootDomain = domainParts.length > 2
-        ? `.${domainParts.slice(-2).join('.')}`
-        : hostname
-
-      console.log(`[AgentBrowserService] Injecting SSO cookie: ${cookieName} for domain: ${rootDomain}`)
-
-      // 使用 agent-browser cookies set --domain 命令设置跨子域 cookie
-      const cookieResult = await this.executeCommand(
-        sessionId,
-        [
-          'cookies', 'set',
-          cookieName,
-          cookieValue,
-          '--domain', rootDomain,
-          '--path', '/',
-          '--secure'
-        ],
-        10000
-      )
-
-      if (cookieResult.success) {
-        console.log(`[AgentBrowserService] SSO cookie pre-set successfully: ${cookieName} for domain ${rootDomain}`)
-
-        // 验证 cookie 是否设置成功
-        const verifyResult = await this.executeCommand(sessionId, ['cookies'], 5000)
-        if (verifyResult.success) {
-          console.log(`[AgentBrowserService] Current cookies:`, verifyResult.output)
-        }
-      } else {
-        console.warn(`[AgentBrowserService] Failed to inject SSO cookie:`, cookieResult.error)
-      }
-    } catch (error) {
-      console.error('[AgentBrowserService] Error injecting SSO cookie:', error)
-      // Cookie 注入失败不应影响导航结果
     }
   }
 

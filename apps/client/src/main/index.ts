@@ -1,7 +1,6 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 
 // 导入新的模块
-import { initSSOClient, bindSSOHandlers } from './handlers/sso-handler'
 import { connectToServer, closeConnection, initServerConnection } from './core/server-connection'
 import { createWindow, getAllWindows } from './services/window-manager'
 import { setupAgentHandlers } from './handlers/agent-handlers'
@@ -17,8 +16,11 @@ app.whenReady().then(async () => {
     app.setAppUserModelId('com.auto-agent.desktop')
   }
 
-  initSSOClient()
-  bindSSOHandlers()
+  // Mock SSO handlers（主进程不再依赖 SSO 库，直接返回 mock 数据）
+  ipcMain.handle('sso:login', async () => ({ success: true, error: null }))
+  ipcMain.handle('sso:whoami', async () => ({ success: true, data: { name: '用户' }, error: null }))
+  ipcMain.handle('sso:logout', async () => ({ success: true, error: null }))
+
   createWindow()
   const mainWindow = BrowserWindow.getAllWindows()[0] || null
 

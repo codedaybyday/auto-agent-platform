@@ -180,7 +180,7 @@ const agentAPI: AgentAPI = {
     ipcRenderer.on('agent:session_title_updated', handler)
     return () => ipcRenderer.removeListener('agent:session_title_updated', handler)
   },
-  // sso
+  // sso (mock)
   login: () => ipcRenderer.invoke('sso:login'),
   whoami: () => ipcRenderer.invoke('sso:whoami'),
   logout: () => ipcRenderer.invoke('sso:logout'),

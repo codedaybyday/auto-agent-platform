@@ -20,6 +20,7 @@ Agent Loop、框架对比相关文档
 - `agent-framework-comparison.md` - Agent 框架对比
 - `agent-loop-concurrency.md` - Agent Loop 并发设计
 - `agent-loop-scheme-1.md` - Agent Loop 方案设计
+- `agent-capability-gap-analysis.md` - Agent Loop 能力差距分析
 
 ### 🌐 browser/ - 浏览器自动化
 浏览器控制、AI 语义化相关文档
