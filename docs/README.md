@@ -21,6 +21,7 @@ Agent Loop、框架对比相关文档
 - `agent-loop-concurrency.md` - Agent Loop 并发设计
 - `agent-loop-scheme-1.md` - Agent Loop 方案设计
 - `agent-capability-gap-analysis.md` - Agent Loop 能力差距分析
+- `loop-guard-design.md` - 工具循环调用检测方案设计
 
 ### 🌐 browser/ - 浏览器自动化
 浏览器控制、AI 语义化相关文档

@@ -17,6 +17,7 @@ import { LLMClient, LLMAPIError } from '../llm/client.js'
 import { ShortTermMemory } from '../memory/short-term.js'
 import { MCPToolBridge } from '../mcp/tool-bridge.js'
 import { log } from '@auto-agent/shared-utils'
+import { LoopGuard } from './loop-guard.js'
 
 export interface AgentLoopEvents {
   'run_start': { input: string; timestamp: number }
@@ -39,6 +40,7 @@ export class AgentLoop extends EventEmitter {
   private shortTermMemory: ShortTermMemory
   private abortController?: AbortController
   private onMessageAdded?: (message: Message) => void
+  private loopGuard: LoopGuard
 
   constructor(
     sessionId: string,
@@ -75,6 +77,13 @@ export class AgentLoop extends EventEmitter {
         maxRetries: 2
       },
       debug: process.env.DEBUG_MEMORY === 'true'
+    })
+
+    // 初始化循环检测器（防止 LLM 陷入重复工具调用）
+    this.loopGuard = new LoopGuard({
+      warnThreshold: 2,
+      blockThreshold: 4,
+      debug: process.env.DEBUG_LOOP_GUARD === 'true'
     })
   }
 
@@ -115,6 +124,8 @@ export class AgentLoop extends EventEmitter {
     // 初始化
     this.state.status = 'running'
     this.state.iteration = 0
+    this.loopGuard.reset()
+    this.loopGuard.setTaskContext(userInput)
     const userMessage: Message = {
       id: this.generateId(),
       role: 'user',
@@ -151,6 +162,18 @@ export class AgentLoop extends EventEmitter {
         const context = this.buildContext()
         log.debug('AgentLoop', `迭代 ${this.state.iteration} - 构建上下文: ${context.length} 条消息`, context)
 
+        // 注入循环检测警告（如果检测到重复调用模式）
+        const loopWarning = this.loopGuard.shouldWarn()
+        if (loopWarning) {
+          log.warn('AgentLoop', `LoopGuard ${loopWarning.level}: ${loopWarning.toolName} x${loopWarning.repeatCount}`)
+          context.push({
+            id: this.generateId(),
+            role: 'system',
+            content: loopWarning.message,
+            timestamp: Date.now()
+          })
+        }
+
         // Step 2: Thought（LLM 思考）
         log.info('AgentLoop', 'Calling LLM...')
         const llmResponse = await this.callLLM(context)
@@ -177,12 +200,24 @@ export class AgentLoop extends EventEmitter {
             // 添加工具结果到上下文（Observation）
             this.addToolResult(toolCall, result)
 
+            // 记录到循环检测器
+            this.loopGuard.recordCall(toolCall, result)
+
             // 通知前端工具执行完成
             this.emit('tool_end', {
               toolCall,
               result,
               timestamp: Date.now()
             })
+          }
+
+          // 检查循环检测器：是否达到强制终止阈值
+          if (this.loopGuard.shouldTerminate()) {
+            log.error('AgentLoop', 'LoopGuard: 检测到工具循环调用，强制终止')
+            this.state.status = 'error'
+            const error = new Error('检测到工具循环调用，任务已自动终止。请用更具体的指令重试。')
+            this.emit('run_error', { error, timestamp: Date.now() })
+            throw error
           }
 
           // LOOP CONTINUE: 带着工具结果继续循环
