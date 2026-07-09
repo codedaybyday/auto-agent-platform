@@ -25,8 +25,8 @@ export interface AgentLoopEvents {
   'run_error': { error: Error; timestamp: number }
   'run_paused': { timestamp: number }
   'iteration_start': { iteration: number; timestamp: number }
-  'tool_start': { toolCall: ToolCall; timestamp: number }
-  'tool_end': { toolCall: ToolCall; result: ToolResult; timestamp: number }
+  'tool_start': { toolCall: ToolCall; timestamp: number; stepIndex?: number; description?: string }
+  'tool_end': { toolCall: ToolCall; result: ToolResult; timestamp: number; stepIndex?: number }
   'stream_chunk': { content?: string; reasoning?: string }
 }
 
@@ -190,7 +190,9 @@ export class AgentLoop extends EventEmitter {
             // 通知前端工具开始执行
             this.emit('tool_start', {
               toolCall,
-              timestamp: Date.now()
+              timestamp: Date.now(),
+              stepIndex: this.state.iteration,
+              description: buildToolStepDescription(toolCall.name, toolCall.arguments)
             })
 
             // 执行工具（可能走 WebSocket 到客户端）
@@ -207,7 +209,8 @@ export class AgentLoop extends EventEmitter {
             this.emit('tool_end', {
               toolCall,
               result,
-              timestamp: Date.now()
+              timestamp: Date.now(),
+              stepIndex: this.state.iteration
             })
           }
 
@@ -439,6 +442,35 @@ export class AgentLoop extends EventEmitter {
 ## 可用工具
 ${toolsList || '- 当前没有可用工具'}
 
+## JSON 参数格式规范（极其重要）
+
+调用工具时，参数必须严格遵守 JSON 格式。错误会导致工具执行失败。
+
+### 正确格式示例
+{"url": "https://www.baidu.com", "ref": 0}
+{"x": 640, "y": 300}
+{"fullPage": false}
+
+### 常见错误（必须避免）
+- ❌ {"url""https://www.baidu.com"}   ← key 和 value 之间缺少冒号 :
+- ❌ {"url"https://www.baidu.com"}    ← 同上
+- ❌ {"ref"0, "x"640}                ← key 和数字之间缺少冒号 :
+- ❌ {"y"270}                        ← 同上
+
+### 规则
+- 每个 key 后必须有英文冒号 : 分隔 value
+- 字符串值用双引号包裹 "value"
+- 数字和布尔值不加引号 42, true
+- 多个键值对用英文逗号隔开
+
+## URL 格式规范
+
+使用浏览器导航时，URL 必须完整：
+- ✅ https://www.baidu.com
+- ✅ https://www.baidu.com/s?wd=关键词
+- ❌ https://www.baidu    ← 缺少 .com
+- ❌ https://wwwidu.com   ← 缺少 bai 前缀
+
 ## 核心原则：区分"询问"与"操作"
 
 用户的请求分为两类，你的响应策略截然不同：
@@ -483,7 +515,8 @@ ${toolsList || '- 当前没有可用工具'}
 ## 禁止事项
 
 - 不要以"确认数据"为由使用工具回答知识性问题
-- 不要主动提供超出用户请求的操作`
+- 不要主动提供超出用户请求的操作
+- 工具参数必须严格遵守 JSON 格式规范`
   }
 
   private buildContext(): Message[] {
@@ -505,6 +538,9 @@ ${toolsList || '- 当前没有可用工具'}
 
     if (useStream) {
       // SSE 流式模式 - 逐字实时推送到前端
+      // 策略：先缓冲所有内容，流结束后判断是否有 toolCalls
+      //   - 有 toolCalls → 这是中间规划步骤，content 不发送给前端（仅在步骤面板中展示）
+      //   - 无 toolCalls → 这是最终答案，发送完整内容到前端
       let fullContent = ''
       let fullReasoningContent = ''
       let accumulatedToolCalls: any[] = []
@@ -513,15 +549,8 @@ ${toolsList || '- 当前没有可用工具'}
         response = await this.llmClient.streamChat(
           messages,
           (chunk, toolCallDelta) => {
-            // 实时发送 SSE 格式 chunk 到前端
             if (chunk) {
               fullContent += chunk
-              this.emit('stream_chunk', {
-                type: 'sse',
-                event: 'content',
-                data: chunk,
-                sessionId: this.state.sessionId
-              })
             }
             // 累积 tool_calls（流式结束后统一处理）
             if (toolCallDelta) {
@@ -536,20 +565,42 @@ ${toolsList || '- 当前没有可用工具'}
         this.abortController = undefined
       }
 
-      // 发送 SSE 结束标记
-      this.emit('stream_chunk', {
-        type: 'sse',
-        event: 'done',
-        data: '[DONE]',
-        sessionId: this.state.sessionId
-      })
-
-      // 使用流式返回的完整内容
+      // 构建响应（合并流式累积的 toolCalls 和已解析的 toolCalls）
+      const mergedToolCalls = response.toolCalls || (accumulatedToolCalls.length > 0
+        ? [accumulatedToolCalls.reduce((merged, delta) => ({ ...merged, ...delta }), {})]
+        : undefined)
       response = {
         content: response.content || fullContent,
         reasoningContent: response.reasoningContent || fullReasoningContent,
-        toolCalls: response.toolCalls,
+        toolCalls: mergedToolCalls,
         usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
+      }
+
+      const hasToolCalls = response.toolCalls && response.toolCalls.length > 0
+
+      if (hasToolCalls) {
+        // 中间规划步骤：不发送流式内容到前端，避免暴露内部计划文本
+        // content 仅保存在后端消息历史中
+        this.emit('stream_chunk', {
+          type: 'sse',
+          event: 'done',
+          data: '[DONE]',
+          sessionId: this.state.sessionId
+        })
+      } else {
+        // 最终答案：发送完整内容到前端
+        this.emit('stream_chunk', {
+          type: 'sse',
+          event: 'content',
+          data: response.content || '',
+          sessionId: this.state.sessionId
+        })
+        this.emit('stream_chunk', {
+          type: 'sse',
+          event: 'done',
+          data: '[DONE]',
+          sessionId: this.state.sessionId
+        })
       }
     } else {
       // 非流式模式 - 一次性获取完整响应
@@ -558,13 +609,22 @@ ${toolsList || '- 当前没有可用工具'}
 
     // 添加助手消息到历史
     if (response.content || response.toolCalls) {
+      const hasToolCalls = response.toolCalls && response.toolCalls.length > 0
       this.addMessage({
         id: this.generateId(),
         role: 'assistant',
         content: response.content || '',
         reasoningContent: response.reasoningContent,
         toolCalls: response.toolCalls,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        metadata: hasToolCalls ? {
+          messageType: 'planning',
+          stepDescription: extractStepDescription(response.content || ''),
+          stepIndex: this.state.iteration,
+          toolName: response.toolCalls?.[0]?.name
+        } : {
+          messageType: 'answer'
+        }
       })
 
       // 非流式模式下，发送 SSE 格式消息
@@ -592,14 +652,26 @@ ${toolsList || '- 当前没有可用工具'}
     // 修复：检查参数中是否有解析错误标记
     if (toolCall.arguments && typeof toolCall.arguments === 'object' && '_parseError' in toolCall.arguments) {
       const errorMsg = (toolCall.arguments as any)._parseError
+      const rawArgs = (toolCall.arguments as any)._raw || (toolCall.arguments as any)._rawArguments || ''
       log.error('AgentLoop', `Tool call arguments parse error for ${toolCall.name}: ${errorMsg}`)
       return {
         toolCallId: toolCall.id,
         success: false,
-        error: `工具参数解析失败: ${errorMsg}. 原始参数: ${(toolCall.arguments as any)._raw}`,
+        error: `JSON参数格式错误。原始参数: ${rawArgs}\n错误: ${errorMsg}\n请修正 JSON 格式后重试：确保每个 key 后用英文冒号 : 分隔 value。正确示例: {"key": "value", "num": 123}`,
         executionTime: 0
       }
     }
+
+    // 自动修复常见 URL 错误（DeepSeek 模型容易产生残缺URL）
+    if (toolCall.name === 'browser_navigate' && toolCall.arguments?.url) {
+      const url = toolCall.arguments.url as string
+      const fixed = autoFixUrl(url)
+      if (fixed !== url) {
+        log.warn('AgentLoop', `🔧 Auto-fixed URL: ${url} → ${fixed}`)
+        toolCall.arguments.url = fixed
+      }
+    }
+
     return this.toolBridge.execute(toolCall)
   }
 
@@ -681,4 +753,64 @@ ${toolsList || '- 当前没有可用工具'}
   private generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
   }
+}
+
+/**
+ * 自动修复 LLM 生成的残缺 URL
+ */
+function autoFixUrl(url: string): string {
+  // baidu → baidu.com (缺少顶级域名)
+  const baiduFix = url.match(/^(https?:\/\/www\.baidu)(\/.*)?$/)
+  if (baiduFix && !url.includes('.com')) {
+    return `${baiduFix[1]}.com${baiduFix[2] || ''}`
+  }
+  // google → google.com
+  const googleFix = url.match(/^(https?:\/\/www\.google)(\/.*)?$/)
+  if (googleFix && !url.includes('.com')) {
+    return `${googleFix[1]}.com${googleFix[2] || ''}`
+  }
+  return url
+}
+
+/**
+ * 从中间消息文本中提取简短步骤描述
+ */
+function extractStepDescription(content: string): string {
+  if (!content) return '执行操作'
+  const firstSentence = content.split(/[。！，,\n]/)[0].trim()
+  return firstSentence.length > 30
+    ? firstSentence.slice(0, 30) + '...'
+    : firstSentence
+}
+
+/**
+ * 根据工具名和参数构建步骤描述
+ */
+function buildToolStepDescription(toolName: string, args?: Record<string, any>): string {
+  const actionMap: Record<string, string> = {
+    'browser_navigate': '正在打开网页',
+    'browser_click': '正在点击元素',
+    'browser_type': '正在输入文本',
+    'browser_get_context': '正在获取页面内容',
+    'browser_screenshot': '正在截图',
+    'bash_exec': '正在执行命令',
+    'bash': '正在执行命令',
+    'web_search': '正在搜索',
+    'fetch_url': '正在获取页面',
+    'web_fetch': '正在获取内容',
+    'file_read': '正在读取文件',
+    'file_write': '正在写入文件',
+    'file_list': '正在列出文件',
+    'file_delete': '正在删除文件',
+    'file_stats': '正在获取文件信息',
+    'workspace_stats': '正在获取工作区信息',
+  }
+
+  const action = actionMap[toolName] || `正在执行 ${toolName}`
+
+  if (args?.url) return `${action}: ${args.url}`
+  if (args?.query) return `${action}: ${args.query}`
+  if (args?.command) return `${action}: ${args.command}`
+
+  return action
 }

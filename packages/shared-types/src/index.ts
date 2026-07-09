@@ -57,6 +57,22 @@ export interface ToolResult {
 }
 
 /**
+ * 消息元数据
+ */
+export interface MessageMetadata {
+  /** 消息类型：planning=含工具调用的中间步骤，answer=最终回复 */
+  messageType?: 'planning' | 'answer'
+  /** 步骤描述，如"正在搜索 TypeScript" */
+  stepDescription?: string
+  /** 关联的工具名 */
+  toolName?: string
+  /** 工具执行是否成功 */
+  toolSuccess?: boolean
+  /** 步骤序号 */
+  stepIndex?: number
+}
+
+/**
  * 对话消息
  */
 export interface Message {
@@ -72,6 +88,8 @@ export interface Message {
   tool_calls?: ToolCall[]
   /** 包含的工具执行结果 */
   tool_results?: ToolResult[]
+  /** 消息元数据（区分中间步骤和最终答案） */
+  metadata?: MessageMetadata
 }
 
 /**

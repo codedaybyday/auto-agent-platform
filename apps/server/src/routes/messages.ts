@@ -121,7 +121,10 @@ export function createMessagesRouter(deps: MessagesDeps): Router {
 
       const agentLoop = deps.sessionManager.getAgentLoop(sessionId)
       const agentMessages = agentLoop?.getMessages()
-      const messages = agentMessages && agentMessages.length > 0 ? agentMessages : session.messages
+      const rawMessages = agentMessages && agentMessages.length > 0 ? agentMessages : session.messages
+
+      // 去除 reasoningContent（思考链，不应发送给前端）
+      const messages = rawMessages.map(({ reasoningContent, ...rest }: any) => rest)
 
       res.json({
         success: true,

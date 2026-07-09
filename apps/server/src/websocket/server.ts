@@ -93,7 +93,9 @@ export class WebSocketGateway {
             sessionId,
             payload: {
               type: 'tool_start',
-              toolCall: data.toolCall
+              toolCall: data.toolCall,
+              stepIndex: data.stepIndex,
+              description: data.description
             }
           }
           break
@@ -106,7 +108,8 @@ export class WebSocketGateway {
             payload: {
               type: 'tool_end',
               toolCall: data.toolCall,
-              result: data.result
+              result: data.result,
+              stepIndex: data.stepIndex
             }
           }
           break

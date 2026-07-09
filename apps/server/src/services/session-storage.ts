@@ -143,9 +143,17 @@ export class SessionStorage {
         tool_calls TEXT, -- JSON string
         tool_results TEXT, -- JSON string
         reasoning_content TEXT,
+        metadata TEXT, -- JSON string: { messageType, stepDescription, ... }
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `)
+
+    // 迁移：确保 metadata 列存在（兼容旧数据库）
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN metadata TEXT`)
+    } catch {
+      // 列已存在，忽略
+    }
 
     // 创建索引
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`)
@@ -288,8 +296,8 @@ export class SessionStorage {
     if (!this.db) return
 
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, reasoning_content)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, reasoning_content, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -300,7 +308,8 @@ export class SessionStorage {
       message.timestamp,
       message.toolCalls ? JSON.stringify(message.toolCalls) : null,
       message.toolResults ? JSON.stringify(message.toolResults) : null,
-      message.reasoningContent || null
+      message.reasoningContent || null,
+      message.metadata ? JSON.stringify(message.metadata) : null
     )
 
     // 更新会话的 updated_at
@@ -373,7 +382,8 @@ export class SessionStorage {
       timestamp: row.timestamp,
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results) : undefined,
-      reasoningContent: row.reasoning_content || undefined
+      reasoningContent: row.reasoning_content || undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined
     }
   }
 

@@ -64,10 +64,12 @@ export interface AgentAPI {
   onStreamDone: (callback: (data: { sessionId?: string }) => void) => () => void
   /** 监听处理状态 */
   onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => () => void
+  /** 监听错误事件 */
+  onError: (callback: (error: string) => void) => () => void
   /** 监听工具开始执行 */
-  onToolStart: (callback: (data: { toolCall: { id: string; name: string; input: Record<string, unknown> } }) => void) => () => void
+  onToolStart: (callback: (data: { toolCall: { id: string; name: string; input: Record<string, unknown> }; stepIndex?: number; description?: string }) => void) => () => void
   /** 监听工具执行完成 */
-  onToolResult: (callback: (data: { toolCall: { id: string; name: string; input: Record<string, unknown> }; result: { tool_use_id: string; content: string; is_error?: boolean } }) => void) => () => void
+  onToolResult: (callback: (data: { toolCall: { id: string; name: string; input: Record<string, unknown> }; result: { tool_use_id: string; content: string; is_error?: boolean }; stepIndex?: number }) => void) => () => void
   /** 监听工具结果消息 */
   onToolResults: (callback: (message: Message) => void) => () => void
   /** 监听历史清空 */
@@ -137,6 +139,12 @@ const agentAPI: AgentAPI = {
     const handler = (_event: Electron.IpcRendererEvent, data: { processing: boolean; sessionId?: string }) => callback(data)
     ipcRenderer.on('agent:processing', handler)
     return () => ipcRenderer.removeListener('agent:processing', handler)
+  },
+
+  onError: (callback: (error: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, error: string) => callback(error)
+    ipcRenderer.on('agent:error', handler)
+    return () => ipcRenderer.removeListener('agent:error', handler)
   },
 
   onToolStart: (callback: (data: { toolCall: { id: string; name: string; input: Record<string, unknown> } }) => void) => {

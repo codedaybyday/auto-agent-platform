@@ -7,6 +7,25 @@ import type { Message, ToolCall, LLMResponse } from '../../types/index.js'
 import { RateLimiter } from '../rate-limiter.js'
 import { log } from '@auto-agent/shared-utils'
 
+/**
+ * 尝试修复常见的 LLM JSON 格式错误（DeepSeek 模型尤其容易产生）
+ * 错误模式：
+ *   "key""value" → "key":"value" （缺少冒号，字符串值）
+ *   "key"number  → "key":number  （缺少冒号，数字值）
+ */
+function tryFixJSON(raw: string): string {
+  // 修复1: "key""value" → "key":"value" （两个字符串相邻，缺少冒号）
+  let fixed = raw.replace(/"([^"]+)"\s*"([^"]+)"/g, '"$1":"$2"')
+
+  // 修复2: "key"数字 → "key":数字 （字符串后紧跟数字，缺少冒号）
+  fixed = fixed.replace(/"(\w+)"(\d)/g, '"$1":$2')
+
+  // 修复3: "key"true/false → "key":true/false
+  fixed = fixed.replace(/"(\w+)"(true|false)/g, '"$1":$2')
+
+  return fixed
+}
+
 export interface LLMConfig {
   model: string
   apiKey: string
@@ -342,8 +361,24 @@ export class LLMClient {
           arguments: JSON.parse(args)
         })
       } catch (e) {
-        // 根因：工具参数解析失败时不应该静默丢弃，否则 LLM 不知道工具未执行
-        // 修复：记录错误并保留原始参数，让上层知道发生了错误
+        const raw = tool.function?.arguments
+        // 尝试自动修复常见 LLM JSON 格式错误（如缺少冒号）
+        const fixed = raw ? tryFixJSON(raw) : raw
+        if (fixed && fixed !== raw) {
+          try {
+            toolCalls.push({
+              id: tool.id,
+              name: tool.function.name,
+              arguments: JSON.parse(fixed)
+            })
+            console.warn(`[LLMClient] 🔧 Auto-fixed JSON for ${tool.function?.name}: ${raw?.slice(0, 80)} → ${fixed.slice(0, 80)}`)
+            continue
+          } catch {
+            // 修复后仍失败，回退到错误标记
+          }
+        }
+
+        // 修复失败，标记为解析错误
         const errorMsg = `Failed to parse arguments for tool '${tool.function?.name}': ${e instanceof Error ? e.message : String(e)}`
         console.error(`[LLMClient] ${errorMsg}`)
         console.error(`[LLMClient] Raw arguments:`, tool.function.arguments)
@@ -519,8 +554,24 @@ export class LLMClient {
             arguments: JSON.parse(chunk.function.arguments)
           })
         } catch (e) {
-          // 根因：JSON 解析失败时静默丢弃，导致前端无反馈
-          // 修复：保留工具调用，但标记为解析错误，让上层处理
+          const raw = chunk.function.arguments
+          // 尝试自动修复常见 LLM JSON 格式错误
+          const fixed = raw ? tryFixJSON(raw) : raw
+          if (fixed && fixed !== raw) {
+            try {
+              toolCalls.push({
+                id: chunk.id,
+                name: chunk.function.name,
+                arguments: JSON.parse(fixed)
+              })
+              console.warn(`[LLMClient] 🔧 Auto-fixed streaming JSON: ${raw?.slice(0, 80)} → ${fixed.slice(0, 80)}`)
+              continue
+            } catch {
+              // 修复后仍失败
+            }
+          }
+
+          // 修复失败，标记为解析错误
           const errorMsg = `Failed to parse arguments: ${e instanceof Error ? e.message : String(e)}`
           console.error(`[LLMClient] ${errorMsg}`)
           console.error(`[LLMClient] Raw arguments (length=${chunk.function.arguments?.length}):`,

@@ -3,6 +3,7 @@ import { ChatPanel } from './components/ChatPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { SessionPanel } from './components/SessionPanel'
 import type { Session } from './components/SessionPanel'
+import type { StepInfo } from './components/StepPanel'
 import './App.css'
 
 interface ToolCall {
@@ -25,6 +26,13 @@ interface Message {
   sessionId?: string
   tool_calls?: ToolCall[]
   tool_results?: ToolResult[]
+  metadata?: {
+    messageType?: 'planning' | 'answer'
+    stepDescription?: string
+    toolName?: string
+    toolSuccess?: boolean
+    stepIndex?: number
+  }
 }
 
 /**
@@ -61,6 +69,89 @@ class BoundedMessageIdSet {
 
 const processedMessageIds = new BoundedMessageIdSet(1000)
 
+/**
+ * 根据工具名生成中文步骤描述
+ */
+function getToolDescription(toolName: string): string {
+  const map: Record<string, string> = {
+    'browser_navigate': '正在导航页面',
+    'browser_click': '正在点击元素',
+    'browser_type': '正在输入文本',
+    'browser_get_context': '正在获取页面内容',
+    'browser_screenshot': '正在截图',
+    'bash_exec': '正在执行命令',
+    'bash': '正在执行命令',
+    'web_search': '正在搜索',
+    'fetch_url': '正在获取页面',
+    'web_fetch': '正在获取内容',
+    'file_read': '正在读取文件',
+    'file_write': '正在写入文件',
+    'file_list': '正在列出文件',
+    'file_delete': '正在删除文件',
+    'file_stats': '正在获取文件信息',
+    'workspace_stats': '正在获取工作区信息',
+  }
+  return map[toolName] || `正在执行 ${toolName}`
+}
+
+/**
+ * 过滤消息并提取步骤历史
+ * chatMessages: user 消息 + metadata.messageType === 'answer' 的 assistant 消息
+ * historySteps: metadata.messageType === 'planning' 的中间步骤消息（向后兼容：无 metadata 但有 tool_calls 的消息也算 planning）
+ */
+function filterAndExtractSteps(allMessages: Message[]): { chatMessages: Message[]; historySteps: StepInfo[] } {
+  const chatMessages: Message[] = []
+  const historySteps: StepInfo[] = []
+
+  for (const msg of allMessages) {
+    if (msg.role === 'user') {
+      chatMessages.push(msg)
+      continue
+    }
+
+    if (msg.role === 'assistant') {
+      // 判断是否为中间步骤
+      const isPlanning =
+        msg.metadata?.messageType === 'planning' ||
+        (!msg.metadata?.messageType && msg.tool_calls && msg.tool_calls.length > 0)
+
+      if (isPlanning) {
+        // 提取为步骤
+        if (msg.tool_calls) {
+          for (const tc of msg.tool_calls) {
+            historySteps.push({
+              id: tc.id,
+              index: msg.metadata?.stepIndex || historySteps.length + 1,
+              description: msg.metadata?.stepDescription
+                || (msg.content ? `${msg.content.slice(0, 30)}${msg.content.length > 30 ? '...' : ''}` : getToolDescription(tc.name)),
+              toolName: tc.name,
+              toolArgs: tc.input,
+              success: msg.metadata?.toolSuccess,
+              status: 'completed' as const,
+              timestamp: msg.timestamp
+            })
+          }
+        } else {
+          // planning message without tool_calls (rare)
+          historySteps.push({
+            id: msg.id,
+            index: msg.metadata?.stepIndex || historySteps.length + 1,
+            description: msg.metadata?.stepDescription || msg.content?.slice(0, 30) || '执行操作',
+            status: 'completed' as const,
+            timestamp: msg.timestamp
+          })
+        }
+      } else {
+        // 最终答案或无 answer 元数据的消息 → 显示在对话中
+        chatMessages.push(msg)
+      }
+    }
+    // tool 和 system 消息不显示在对话中
+  }
+
+  return { chatMessages, historySteps }
+}
+
 function App(): JSX.Element {
   const [view, setView] = useState<'chat' | 'settings'>('chat')
   const [messages, setMessages] = useState<Message[]>([])
@@ -73,6 +164,7 @@ function App(): JSX.Element {
   const [streamingContentMap, setStreamingContentMap] = useState<Map<string, string>>(new Map())
   const [isStreamingMap, setIsStreamingMap] = useState<Map<string, boolean>>(new Map())
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [steps, setSteps] = useState<StepInfo[]>([])
 
   const messagesRef = useRef<Message[]>([])
   const processingMapRef = useRef<Map<string, boolean>>(new Map())
@@ -163,6 +255,7 @@ function App(): JSX.Element {
           setStreamingContentMap((prev) => {
             const newMap = new Map(prev)
             newMap.delete(msgSessionId)
+            streamingContentMapRef.current = newMap
             return newMap
           })
           setIsStreamingMap((prev) => {
@@ -188,15 +281,49 @@ function App(): JSX.Element {
           newMap.set(sessionId, data.processing)
           return newMap
         })
+        // 任务完成时，标记所有 running 步骤为 completed
+        if (!data.processing) {
+          setSteps(prev => prev.map(s =>
+            s.status === 'running' ? { ...s, status: 'completed' as const } : s
+          ))
+        }
       }
     })
 
-    const unsubscribeToolStart = window.api.agent.onToolStart((data: { toolCall: ToolCall }) => {
-      console.log('Tool started:', data.toolCall.name)
+    const unsubscribeToolStart = window.api.agent.onToolStart((data: { toolCall: ToolCall; stepIndex?: number; description?: string }) => {
+      // 服务端 ToolCall 使用 arguments 字段名，前端类型使用 input — 兼容两方
+      const args = (data.toolCall as any).arguments || data.toolCall.input
+      const step: StepInfo = {
+        id: data.toolCall.id,
+        index: data.stepIndex || 0,
+        description: data.description || getToolDescription(data.toolCall.name),
+        toolName: data.toolCall.name,
+        toolArgs: args,
+        status: 'running',
+        timestamp: Date.now()
+      }
+      setSteps(prev => [...prev, step])
     })
 
-    const unsubscribeToolResult = window.api.agent.onToolResult((data: { toolCall: ToolCall; result: ToolResult }) => {
-      console.log('Tool result:', data.toolCall.name, data.result.is_error ? 'error' : 'success')
+    const unsubscribeToolResult = window.api.agent.onToolResult((data: { toolCall: ToolCall; result: any; stepIndex?: number }) => {
+      // 服务端 ToolResult: { toolCallId, success, data, error, executionTime }
+      const isSuccess = data.result?.success !== false
+      const errorMsg = data.result?.error || (data.result?.data?.error)
+      const execTime = data.result?.executionTime
+
+      setSteps(prev => prev.map(s =>
+        s.id === data.toolCall.id
+          ? {
+              ...s,
+              status: isSuccess ? 'completed' as const : 'failed' as const,
+              description: isSuccess
+                ? s.description.replace(/^正在/, '已完成: ').replace(/^执行 /, '已完成: ')
+                : `失败: ${s.description}`,
+              error: errorMsg,
+              toolDuration: execTime
+            }
+          : s
+      ))
     })
 
     const unsubscribeStreamChunk = window.api.agent.onStreamChunk((data: { chunk: string; sessionId?: string }) => {
@@ -207,6 +334,8 @@ function App(): JSX.Element {
         const newMap = new Map(prev)
         const currentContent = newMap.get(targetSessionId) || ''
         newMap.set(targetSessionId, currentContent + data.chunk)
+        // 立即同步 ref，避免 onStreamDone 读取到陈旧值
+        streamingContentMapRef.current = newMap
         return newMap
       })
       setIsStreamingMap((prev) => {
@@ -249,6 +378,7 @@ function App(): JSX.Element {
         setStreamingContentMap((prev) => {
           const newMap = new Map(prev)
           newMap.delete(targetSessionId)
+          streamingContentMapRef.current = newMap
           return newMap
         })
       }
@@ -256,7 +386,10 @@ function App(): JSX.Element {
 
     const unsubscribeHistoryCleared = window.api.agent.onHistoryCleared(() => {
       setMessages([])
-      setStreamingContentMap(new Map())
+      setSteps([])
+      const empty = new Map()
+      streamingContentMapRef.current = empty
+      setStreamingContentMap(empty)
     })
 
     const unsubscribeSessionsUpdated = window.api.agent.onSessionsUpdated((updatedSessions: Session[]) => {
@@ -276,6 +409,24 @@ function App(): JSX.Element {
       )
     })
 
+    const unsubscribeError = window.api.agent.onError((error: string) => {
+      // 任务失败时，在消息区展示错误结果
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: 'assistant',
+        content: `❌ 任务执行失败: ${error}`,
+        timestamp: Date.now(),
+        metadata: { messageType: 'answer' }
+      }
+      setMessages(prev => [...prev, errorMessage])
+      // 标记所有 running 步骤为 failed
+      setSteps(prev => prev.map(s =>
+        s.status === 'running'
+          ? { ...s, status: 'failed' as const, error: error }
+          : s
+      ))
+    })
+
     return () => {
       unsubscribeMessage()
       unsubscribeProcessing()
@@ -287,6 +438,7 @@ function App(): JSX.Element {
       unsubscribeSessionsUpdated()
       unsubscribeSessionSwitched()
       unsubscribeSessionTitleUpdated()
+      unsubscribeError()
     }
   }, [])
 
@@ -327,10 +479,10 @@ function App(): JSX.Element {
         // 加载第一个会话的消息
         const msgResult = await window.api.agent.getSessionMessages(firstSession.id)
         if (msgResult.success && msgResult.messages) {
-          const uniqueMessages = Array.from(
-            new Map(msgResult.messages.map((m: Message) => [m.id, m])).values()
-          )
-          setMessages(uniqueMessages)
+          const allMessages = msgResult.messages as Message[]
+          const { chatMessages, historySteps } = filterAndExtractSteps(allMessages)
+          setMessages(chatMessages)
+          setSteps(historySteps)
         }
       }
     }
@@ -342,6 +494,7 @@ function App(): JSX.Element {
       setCurrentSessionId(result.sessionId)
       currentSessionIdRef.current = result.sessionId
       setMessages([])
+      setSteps([])
       setView('chat')
       await loadSessions()
     } else {
@@ -354,6 +507,7 @@ function App(): JSX.Element {
     if (result.success) {
       // 先清空消息，避免在加载期间显示旧消息
       setMessages([])
+      setSteps([])
 
       setCurrentSessionId(sessionId)
       currentSessionIdRef.current = sessionId
@@ -363,12 +517,13 @@ function App(): JSX.Element {
 
       const msgResult = await window.api.agent.getSessionMessages(sessionId)
       if (msgResult.success && msgResult.messages) {
-        const uniqueMessages = Array.from(
-          new Map(msgResult.messages.map((m: Message) => [m.id, m])).values()
-        )
-        setMessages(uniqueMessages)
+        const allMessages = msgResult.messages as Message[]
+        const { chatMessages, historySteps } = filterAndExtractSteps(allMessages)
+        setMessages(chatMessages)
+        setSteps(historySteps)
       } else {
         setMessages([])
+        setSteps([])
       }
     } else {
       setError(result.error || '切换会话失败')
@@ -382,6 +537,7 @@ function App(): JSX.Element {
       if (sessionId === currentSessionIdRef.current) {
         setCurrentSessionId(null)
         setMessages([])
+        setSteps([])
       }
     } else {
       setError(result.error || '删除会话失败')
@@ -403,6 +559,7 @@ function App(): JSX.Element {
       return
     }
     setError(null)
+    setSteps([]) // 新任务开始，清空旧步骤
     const result = await window.api.agent.sendMessage(content)
     if (!result.success) setError(result.error || '发送消息失败')
   }
@@ -411,10 +568,12 @@ function App(): JSX.Element {
     const result = await window.api.agent.clearHistory()
     if (result.success) {
       setMessages([])
+      setSteps([])
       if (currentSessionId) {
         setStreamingContentMap((prev) => {
           const newMap = new Map(prev)
           newMap.delete(currentSessionId)
+          streamingContentMapRef.current = newMap
           return newMap
         })
         setIsStreamingMap((prev) => {
@@ -561,6 +720,7 @@ function App(): JSX.Element {
         {view === 'chat' ? (
           <ChatPanel
             messages={messages}
+            steps={steps}
             isProcessing={isProcessing}
             streamingContent={streamingContent}
             isStreaming={isStreaming}

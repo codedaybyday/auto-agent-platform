@@ -43,6 +43,14 @@ export interface Message {
   toolResults?: ToolResult[]
   timestamp: number
   reasoningContent?: string
+  /** 消息元数据（区分中间步骤和最终答案） */
+  metadata?: {
+    messageType?: 'planning' | 'answer'
+    stepDescription?: string
+    toolName?: string
+    toolSuccess?: boolean
+    stepIndex?: number
+  }
 }
 
 export interface ToolCall {

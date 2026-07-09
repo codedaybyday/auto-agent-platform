@@ -1,0 +1,180 @@
+.step-panel {
+  max-height: 35%;
+  overflow-y: auto;
+  background: #fafafa;
+  border-bottom: 1px solid #e0e0e0;
+  font-size: 13px;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #f0f0f0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.step-title {
+  font-weight: 600;
+  color: #555;
+}
+
+.step-count-badge {
+  font-size: 11px;
+  background: #007AFF;
+  color: white;
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+
+.step-total {
+  font-size: 11px;
+  color: #999;
+  margin-left: auto;
+}
+
+.step-list {
+  padding: 2px 0;
+}
+
+.step-item {
+  border-bottom: 1px solid #eee;
+}
+
+.step-item.running {
+  background: #f0f6ff;
+}
+
+.step-item.failed {
+  background: #fff5f5;
+}
+
+.step-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.step-item-header:hover {
+  background: #f0f0f0;
+}
+
+.step-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #e0e0e0;
+  border-top-color: #007AFF;
+  border-radius: 50%;
+  animation: step-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes step-spin {
+  to { transform: rotate(360deg); }
+}
+
+.step-icon-done {
+  color: #34c759;
+  font-weight: bold;
+  font-size: 12px;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.step-icon-error {
+  color: #ff3b30;
+  font-weight: bold;
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.step-label {
+  flex: 1;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-item.running .step-label {
+  color: #007AFF;
+  font-weight: 500;
+}
+
+.step-item.failed .step-label {
+  color: #cc0000;
+}
+
+.step-duration {
+  font-size: 11px;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.step-expand-icon {
+  color: #bbb;
+  font-size: 12px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.step-item-detail {
+  padding: 0 16px 10px 30px;
+}
+
+.step-detail-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.step-detail-section {
+  margin-top: 6px;
+}
+
+.step-detail-label {
+  font-size: 11px;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.step-detail-value {
+  font-size: 12px;
+  color: #666;
+  background: #f5f5f5;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.step-detail-section pre {
+  background: #f5f5f5;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #666;
+  max-height: 150px;
+  overflow-y: auto;
+  margin: 4px 0 0 0;
+  line-height: 1.4;
+}
+
+.step-detail-section pre.error {
+  background: #fff0f0;
+  color: #cc0000;
+}

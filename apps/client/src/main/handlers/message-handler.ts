@@ -264,12 +264,15 @@ function handleStreamError(message: any, mainWindow: BrowserWindow | null) {
 function handleStateUpdate(message: any, mainWindow: BrowserWindow | null) {
   if (message.payload?.type === 'tool_start') {
     mainWindow?.webContents.send('agent:tool_start', {
-      toolCall: message.payload.toolCall
+      toolCall: message.payload.toolCall,
+      stepIndex: message.payload.stepIndex,
+      description: message.payload.description
     })
   } else if (message.payload?.type === 'tool_end') {
     mainWindow?.webContents.send('agent:tool_result', {
       toolCall: message.payload.toolCall,
-      result: message.payload.result
+      result: message.payload.result,
+      stepIndex: message.payload.stepIndex
     })
   }
 }

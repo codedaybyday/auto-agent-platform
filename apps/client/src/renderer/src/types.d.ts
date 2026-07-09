@@ -62,10 +62,12 @@ export interface AgentAPI {
   onStreamDone: (callback: (data: { sessionId?: string }) => void) => () => void
   /** 监听处理状态 */
   onProcessing: (callback: (data: { processing: boolean; sessionId?: string }) => void) => () => void
+  /** 监听错误事件（任务失败时触发） */
+  onError: (callback: (error: string) => void) => () => void
   /** 监听工具开始执行 */
-  onToolStart: (callback: (data: { toolCall: ToolCall }) => void) => () => void
+  onToolStart: (callback: (data: { toolCall: ToolCall; stepIndex?: number; description?: string }) => void) => () => void
   /** 监听工具执行完成 */
-  onToolResult: (callback: (data: { toolCall: ToolCall; result: ToolResult }) => void) => () => void
+  onToolResult: (callback: (data: { toolCall: ToolCall; result: ToolResult; stepIndex?: number }) => void) => () => void
   /** 监听工具结果消息 */
   onToolResults: (callback: (message: Message) => void) => () => void
   /** 监听历史清空 */

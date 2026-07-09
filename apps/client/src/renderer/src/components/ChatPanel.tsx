@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { StepPanel, type StepInfo } from './StepPanel'
 import './ChatPanel.css'
 
 interface ToolCall {
@@ -25,10 +26,18 @@ interface Message {
   timestamp: number
   tool_calls?: ToolCall[]
   tool_results?: ToolResult[]
+  metadata?: {
+    messageType?: 'planning' | 'answer'
+    stepDescription?: string
+    toolName?: string
+    toolSuccess?: boolean
+    stepIndex?: number
+  }
 }
 
 interface ChatPanelProps {
   messages: Message[]
+  steps?: StepInfo[]
   isProcessing: boolean
   streamingContent?: string
   isStreaming?: boolean
@@ -261,6 +270,7 @@ function MessageBubble({ message, isLoading, isStreaming }: { message: Message; 
 
 export function ChatPanel({
   messages,
+  steps = [],
   isProcessing,
   streamingContent = '',
   isStreaming = false,
@@ -330,7 +340,7 @@ export function ChatPanel({
       </div>
 
       <div className="messages-container">
-        {messages.length === 0 ? (
+        {messages.length === 0 && steps.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">🤖</div>
             <h3>欢迎使用 Auto Agent</h3>
@@ -347,7 +357,11 @@ export function ChatPanel({
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
-            {/* 流式消息显示（逐字输出） */}
+
+            {/* 处理步骤面板：在对话流中作为助手处理过程展示 */}
+            <StepPanel steps={steps} isProcessing={isProcessing} />
+
+            {/* 流式消息显示（仅最终答案，逐字输出） */}
             {isStreaming && streamingContent && (
               <MessageBubble
                 key="streaming"
@@ -360,8 +374,8 @@ export function ChatPanel({
                 isStreaming={true}
               />
             )}
-            {/* 非流式加载状态 */}
-            {isProcessing && !isStreaming && messages[messages.length - 1]?.role !== 'assistant' && (
+            {/* 非流式加载状态（无步骤且无流式内容时显示） */}
+            {isProcessing && !isStreaming && steps.length === 0 && messages[messages.length - 1]?.role !== 'assistant' && (
               <MessageBubble
                 key="loading"
                 message={{
