@@ -12,7 +12,7 @@ import { Browser, BrowserContext, Page, chromium } from 'playwright'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { spawn } from 'child_process'
+import { spawn, execSync } from 'child_process'
 import { log } from '@auto-agent/shared-utils'
 
 export interface SessionBrowserPage {
@@ -32,12 +32,21 @@ export class BrowserManager {
   private cdpEndpoint: string = 'http://localhost:9222'
   private tempUserDataDir: string | null = null
   private chromeProcess: any = null
+  // 子进程（MCP Server）不应管理 Chrome 生命周期，只连接已有的
+  private readonly isChildProcess: boolean
 
   constructor() {
+    // 子进程（MCP Server 通过 MCP_SESSION_ID 标识）不应管理 Chrome 生命周期
+    this.isChildProcess = !!process.env.MCP_SESSION_ID
+
+    // 默认无头模式（节省内存），设置 HEADLESS=false 切换回有头模式用于调试
+    const headlessFromEnv = process.env.HEADLESS?.toLowerCase()
+    const headless = headlessFromEnv === 'false' ? false : true // 默认 true
     this.config = {
-      headless: false,
+      headless,
       viewport: { width: 1280, height: 720 }
     }
+    log.info('BrowserManager', `Mode: ${headless ? 'headless' : 'headed'}, Role: ${this.isChildProcess ? 'child' : 'main'}`)
   }
 
   /**
@@ -150,6 +159,45 @@ export class BrowserManager {
   }
 
   /**
+   * 杀掉孤儿 Chrome 进程（上次会话遗留的）
+   */
+  private async killOrphanChrome(): Promise<void> {
+    try {
+      const platform = process.platform
+      if (platform === 'darwin' || platform === 'linux') {
+        // 用 lsof 找到占用 9222 端口的进程并 kill
+        const pid = execSync('lsof -ti :9222', { encoding: 'utf-8' }).trim()
+        if (pid) {
+          const pids = pid.split('\n')
+          for (const p of pids) {
+            try {
+              process.kill(parseInt(p), 'SIGTERM')
+              log.info('BrowserManager', `Killed orphan Chrome PID: ${p}`)
+            } catch { /* ignore */ }
+          }
+        }
+      } else if (platform === 'win32') {
+        execSync('for /f "tokens=5" %a in (\'netstat -ano ^| findstr :9222\') do taskkill /PID %a /F', { encoding: 'utf-8' })
+      }
+    } catch (e) {
+      log.warn('BrowserManager', 'Failed to kill orphan Chrome:', e)
+    }
+
+    // 等待端口释放
+    let retries = 0
+    while (retries < 10) {
+      await this.sleep(300)
+      const stillInUse = await this.checkChromeDebugPort()
+      if (!stillInUse) {
+        log.info('BrowserManager', 'Port 9222 freed, will launch fresh Chrome')
+        return
+      }
+      retries++
+    }
+    log.warn('BrowserManager', 'Port 9222 still occupied after killing orphan')
+  }
+
+  /**
    * 启动带 CDP 的独立 Chrome 实例
    */
   private async launchChromeWithCDP(): Promise<void> {
@@ -158,8 +206,19 @@ export class BrowserManager {
     // 检查端口是否被占用
     const isPortInUse = await this.checkChromeDebugPort()
     if (isPortInUse) {
-      log.info('BrowserManager', 'Port 9222 already in use, using existing Chrome')
-      return
+      // 子进程：主进程已启动好 Chrome，直接复用，不杀
+      if (this.isChildProcess) {
+        log.info('BrowserManager', '[Child] Port 9222 has Chrome, reusing (managed by main process)')
+        return
+      }
+      // 主进程：如果 chromeProcess 为 null，说明是上次会话遗留的孤儿进程
+      if (!this.chromeProcess) {
+        log.info('BrowserManager', 'Orphan Chrome detected on port 9222, killing it...')
+        await this.killOrphanChrome()
+      } else {
+        log.info('BrowserManager', 'Port 9222 already in use by our Chrome, reusing')
+        return
+      }
     }
 
     log.info('BrowserManager', 'Launching independent Chrome with CDP...')
@@ -176,21 +235,33 @@ export class BrowserManager {
       '--disable-popup-blocking',
       '--disable-infobars',
       '--disable-blink-features=AutomationControlled',
-      // 窗口大小
-      `--window-size=${this.config.viewport.width},${this.config.viewport.height}`,
-      // 新窗口位置（避免覆盖已有窗口）
-      '--window-position=100,100',
-      // 减少资源占用
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
       // 禁用不必要的服务
       '--disable-sync',
       '--disable-extensions',
       '--disable-translate',
+      // 减少后台资源占用
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       // 内存优化
-      '--js-flags=--max-old-space-size=1024'
+      '--js-flags=--max-old-space-size=512'
     ]
+
+    // 无头模式 vs 有头模式
+    if (this.config.headless) {
+      // --headless=new：Chrome 112+ 新无头模式，行为更接近有头，截图/DOM 完全正常
+      chromeArgs.push('--headless=new')
+      chromeArgs.push('--disable-gpu')
+      chromeArgs.push('--disable-dev-shm-usage')
+      // 无头模式下不需要窗口
+      chromeArgs.push(`--window-size=${this.config.viewport.width},${this.config.viewport.height}`)
+      log.info('BrowserManager', 'Launching in headless mode')
+    } else {
+      // 有头模式：设置窗口大小和位置
+      chromeArgs.push(`--window-size=${this.config.viewport.width},${this.config.viewport.height}`)
+      chromeArgs.push('--window-position=100,100')
+      log.info('BrowserManager', 'Launching in headed mode')
+    }
 
     log.info('BrowserManager', `Chrome args: ${chromeArgs.join(' ')}`)
 
@@ -246,7 +317,17 @@ export class BrowserManager {
     if (!this.browser) {
       // 确保 Chrome 已启动并监听 CDP 端口
       const isCDPReady = await this.checkChromeDebugPort()
-      if (!isCDPReady) {
+      if (isCDPReady) {
+        // 子进程：主进程已启动好 Chrome，直接连接
+        if (this.isChildProcess) {
+          log.info('BrowserManager', '[Child] Connecting to existing Chrome on port 9222')
+        } else if (!this.chromeProcess) {
+          // 主进程：如果是孤儿进程，杀掉后重新启动，确保模式匹配
+          log.info('BrowserManager', 'Orphan Chrome detected on port 9222, killing it...')
+          await this.killOrphanChrome()
+          await this.launchChromeWithCDP()
+        }
+      } else {
         await this.launchChromeWithCDP()
       }
 
@@ -444,11 +525,23 @@ export class BrowserManager {
   async prelaunchChrome(): Promise<void> {
     log.info('BrowserManager', 'Prelaunching Chrome in background...')
 
+    // 子进程不管理 Chrome 生命周期
+    if (this.isChildProcess) {
+      log.info('BrowserManager', '[Child] Chrome lifecycle managed by main process, skipping prelaunch')
+      return
+    }
+
     // 检查是否已就绪
     const isReady = await this.checkChromeDebugPort()
     if (isReady) {
-      log.info('BrowserManager', 'Chrome already running, prelaunch skipped')
-      return
+      // 主进程：如果是孤儿进程（上次会话遗留），杀掉后重新启动
+      if (!this.chromeProcess) {
+        log.info('BrowserManager', 'Orphan Chrome detected on port 9222, killing it...')
+        await this.killOrphanChrome()
+      } else {
+        log.info('BrowserManager', 'Chrome already running, prelaunch skipped')
+        return
+      }
     }
 
     try {

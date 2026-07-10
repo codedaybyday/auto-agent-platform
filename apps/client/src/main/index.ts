@@ -66,5 +66,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   closeConnection()
+  await browserManager.closeBrowser()
   await cleanupAllTools()
 })

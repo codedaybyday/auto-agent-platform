@@ -68,11 +68,14 @@ Available actions:
 
   async initialize(): Promise<void> {
     if (!this.state.browser) {
+      // 默认无头模式，设置 HEADLESS=false 切换回有头模式
+      const headless = process.env.HEADLESS?.toLowerCase() !== 'false'
       this.state.browser = await chromium.launch({
-        headless: false,
+        headless,
         args: [
           '--disable-blink-features=AutomationControlled',
-          '--disable-web-security'
+          '--disable-web-security',
+          ...(headless ? ['--disable-gpu', '--disable-dev-shm-usage'] : [])
         ]
       })
       this.state.context = await this.state.browser.newContext({

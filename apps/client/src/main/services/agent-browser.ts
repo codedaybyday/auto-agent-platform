@@ -57,7 +57,8 @@ export class AgentBrowserService {
 
   constructor(config: AgentBrowserConfig = {}) {
     this.config = {
-      headless: config.headless ?? false,
+      // 默认无头模式，通过 config 或 HEADLESS=false 环境变量切换回有头模式
+      headless: config.headless ?? (process.env.HEADLESS?.toLowerCase() !== 'false'),
       securityGuard: config.securityGuard ?? defaultSecurityGuard,
       viewport: config.viewport ?? { width: 1280, height: 720 }
     }
