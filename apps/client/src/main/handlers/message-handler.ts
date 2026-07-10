@@ -262,13 +262,16 @@ function handleStreamError(message: any, mainWindow: BrowserWindow | null) {
 }
 
 function handleStateUpdate(message: any, mainWindow: BrowserWindow | null) {
+  console.log('[Main] handleStateUpdate payload.type:', message.payload?.type, 'hasToolCall:', !!message.payload?.toolCall)
   if (message.payload?.type === 'tool_start') {
+    console.log('[Main] Forwarding agent:tool_start', message.payload.toolCall?.name)
     mainWindow?.webContents.send('agent:tool_start', {
       toolCall: message.payload.toolCall,
       stepIndex: message.payload.stepIndex,
       description: message.payload.description
     })
   } else if (message.payload?.type === 'tool_end') {
+    console.log('[Main] Forwarding agent:tool_result', message.payload.toolCall?.name)
     mainWindow?.webContents.send('agent:tool_result', {
       toolCall: message.payload.toolCall,
       result: message.payload.result,
