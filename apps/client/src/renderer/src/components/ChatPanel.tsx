@@ -325,7 +325,7 @@ export function ChatPanel({
   return (
     <div className="chat-interface">
       <div className="chat-header">
-        <h2>Agent 对话</h2>
+        <h2>任务</h2>
         <div className="chat-actions">
           {isProcessing && (
             <span className="processing-indicator">
@@ -343,8 +343,8 @@ export function ChatPanel({
         {messages.length === 0 && steps.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">🤖</div>
-            <h3>欢迎使用 Auto Agent</h3>
-            <p>开始与 AI 助手对话。</p>
+            <h3>新建任务</h3>
+            <p>输入指令，AI 助手将自动执行。</p>
             <p>你可以让它：</p>
             <ul>
               <li>执行 bash 命令</li>
