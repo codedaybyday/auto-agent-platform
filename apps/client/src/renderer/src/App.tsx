@@ -291,6 +291,7 @@ function App(): JSX.Element {
     })
 
     const unsubscribeToolStart = window.api.agent.onToolStart((data: { toolCall: ToolCall; stepIndex?: number; description?: string }) => {
+      console.log('[Renderer] onToolStart:', data.toolCall?.name, 'steps count:', steps.length)
       // 服务端 ToolCall 使用 arguments 字段名，前端类型使用 input — 兼容两方
       const args = (data.toolCall as any).arguments || data.toolCall.input
       const step: StepInfo = {
@@ -302,7 +303,10 @@ function App(): JSX.Element {
         status: 'running',
         timestamp: Date.now()
       }
-      setSteps(prev => [...prev, step])
+      setSteps(prev => {
+        console.log('[Renderer] setSteps adding step:', step.toolName, 'new length:', prev.length + 1)
+        return [...prev, step]
+      })
     })
 
     const unsubscribeToolResult = window.api.agent.onToolResult((data: { toolCall: ToolCall; result: any; stepIndex?: number }) => {
@@ -645,11 +649,11 @@ function App(): JSX.Element {
           </div>
         </div>
 
-        {/* 新会话按钮 */}
+        {/* 新建任务按钮 */}
         <div className="sidebar-actions">
-          <button className="new-chat-btn" onClick={handleCreateSession}>
-            <span className="btn-icon">+</span>
-            <span className="btn-text">新会话</span>
+          <button className="new-task-btn" onClick={handleCreateSession}>
+            <span className="btn-icon">📋</span>
+            <span className="btn-text">新建任务</span>
           </button>
         </div>
 
