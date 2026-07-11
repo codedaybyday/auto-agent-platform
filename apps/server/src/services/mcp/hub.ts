@@ -8,6 +8,35 @@
  */
 
 import { toolRegistry } from './registry.js'
+
+/** 截断大对象用于日志，避免完整 DOM 等巨型数据撑爆日志文件 */
+function truncateForLog(obj: any, maxLen: number = 500): any {
+  if (obj === null || obj === undefined) return obj
+  if (typeof obj === 'string') {
+    return obj.length > maxLen ? obj.slice(0, maxLen) + `...(${obj.length} chars)` : obj
+  }
+  if (Array.isArray(obj)) {
+    return obj.length > 20
+      ? obj.slice(0, 20).map(v => truncateForLog(v, maxLen)).concat(`...(${obj.length} items)`)
+      : obj.map(v => truncateForLog(v, maxLen))
+  }
+  if (typeof obj === 'object') {
+    const truncated: any = {}
+    let count = 0
+    for (const [k, v] of Object.entries(obj)) {
+      if (count++ > 50) { truncated['...(truncated)'] = `${Object.keys(obj).length - 50} more keys`; break }
+      if (typeof v === 'string' && v.length > maxLen) {
+        truncated[k] = v.slice(0, maxLen) + `...(${v.length} chars)`
+      } else if (typeof v === 'object') {
+        truncated[k] = truncateForLog(v, maxLen)
+      } else {
+        truncated[k] = v
+      }
+    }
+    return truncated
+  }
+  return obj
+}
 import { log } from '@auto-agent/shared-utils'
 import type { WSConnection } from '../../types/index.js'
 
@@ -204,7 +233,7 @@ export class MCPHub {
    * 处理 MCP 响应（从 Client 返回）
    */
   handleResponse(sessionId: string, messageId: string, result: any): void {
-    log.debug('MCPHub', `handleResponse called`, { sessionId, messageId, resultType: typeof result, resultKeys: result ? Object.keys(result) : null, result })
+    log.debug('MCPHub', `handleResponse called`, { sessionId, messageId, resultType: typeof result, resultKeys: result ? Object.keys(result) : null, result: truncateForLog(result) })
 
     const state = this.sessionStates.get(sessionId)
     if (!state) {
