@@ -11,6 +11,7 @@ import type { SessionManager } from './agent/session.js'
 
 type SchedulerDeps = {
   sessionManager: SessionManager
+  wsGateway: any  // WebSocketGateway，用于绑定会话
   /** 通知客户端定时任务已执行 */
   onScheduleExecuted?: (schedule: Schedule, sessionId: string) => void
 }
@@ -82,7 +83,7 @@ class Scheduler {
 
   /** 执行单个定时任务 */
   private async executeSchedule(schedule: Schedule): Promise<void> {
-    const { sessionManager, onScheduleExecuted } = this.deps!
+    const { sessionManager, wsGateway, onScheduleExecuted } = this.deps!
     const now = Date.now()
 
     console.log(`[Scheduler] Executing: ${schedule.name} (${schedule.instruction.slice(0, 50)}...)`)
@@ -90,24 +91,30 @@ class Scheduler {
     // 1. 创建会话
     const session = await sessionManager.createSession(schedule.userId, schedule.name)
 
-    // 2. 获取 AgentLoop 并执行
+    // 2. 获取 AgentLoop
     const agentLoop = sessionManager.getAgentLoop(session.id)
     if (!agentLoop) {
       throw new Error(`Failed to get AgentLoop for session ${session.id}`)
     }
 
-    // 3. 计算下次执行时间
+    // 3. 绑定用户的 WebSocket 连接（AgentLoop 需要 WS 才能初始化 MCP 工具）
+    const bound = wsGateway.bindSessionForScheduler(session.id, schedule.userId, agentLoop)
+    if (!bound) {
+      console.warn(`[Scheduler] No active WebSocket for user ${schedule.userId}, agent will run without tools`)
+    }
+
+    // 4. 计算下次执行时间
     const nextRunAt = calcNextRunAt(schedule.cronExpr, now)
 
-    // 4. 更新执行记录
+    // 5. 更新执行记录
     scheduleStorage.recordRun(schedule.id, now, nextRunAt, session.id)
 
-    // 5. 启动 Agent Loop (异步，不阻塞)
+    // 6. 启动 Agent Loop (异步，不阻塞)
     agentLoop.run(schedule.instruction).catch(err => {
       console.error(`[Scheduler] Agent execution failed for schedule ${schedule.name}:`, err)
     })
 
-    // 6. 通知客户端
+    // 7. 通知客户端
     if (onScheduleExecuted) {
       onScheduleExecuted(schedule, session.id)
     }

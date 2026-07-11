@@ -513,6 +513,31 @@ export class WebSocketGateway {
     }
   }
 
+  /**
+   * 为调度器绑定用户连接（公开方法）
+   * 找到该用户的任意活跃 WebSocket 连接，绑定到指定 session
+   */
+  bindSessionForScheduler(sessionId: string, userId: string, agentLoop: any): boolean {
+    const connectionIds = this.userConnections.get(userId)
+    if (!connectionIds || connectionIds.size === 0) {
+      console.warn(`[WebSocket] No active connection for user ${userId}, scheduler session ${sessionId} cannot bind`)
+      return false
+    }
+
+    // 取第一个连接
+    const connId = connectionIds.values().next().value as string
+    const connection = this.connections.get(connId)
+    if (!connection) return false
+
+    agentLoop.bindWebSocket(connection)
+    connection.subscriptions.add(sessionId)
+    this.eventBus.registerSession(sessionId, userId)
+    this.eventBus.bindAgentLoop(agentLoop, sessionId)
+
+    console.log(`[WebSocket] Scheduler bound session ${sessionId} to user ${userId} connection ${connId}`)
+    return true
+  }
+
   // ==================== 定时任务处理 ====================
 
   private handleScheduleList(connection: WSConnection, message: WSMessage): void {
@@ -523,7 +548,7 @@ export class WebSocketGateway {
     }))
     this.sendToConnection(connection.id, {
       type: 'schedule.list' as MessageType,
-      messageId: message.messageId,
+      messageId: message.messageId || this.generateId(),
       timestamp: Date.now(),
       payload: { schedules: withDesc }
     })

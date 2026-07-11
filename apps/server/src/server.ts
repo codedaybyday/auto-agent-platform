@@ -54,6 +54,7 @@ export function startServer(): ServerContext {
   // 启动定时任务调度器
   scheduler.start({
     sessionManager,
+    wsGateway,
     onScheduleExecuted: (schedule, sessionId) => {
       log.info('Scheduler', `Schedule "${schedule.name}" executed, session=${sessionId}`)
     }
