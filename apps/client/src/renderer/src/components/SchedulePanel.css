@@ -146,11 +146,24 @@
   color: white;
   font-size: 14px;
   cursor: pointer;
+  transition: background 0.15s;
+}
+
+.schedule-form-actions .save-btn:hover {
+  background: #0056CC;
+}
+
+.schedule-form-actions .save-btn:active {
+  background: #004499;
 }
 
 .schedule-form-actions .save-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.schedule-form-actions .save-btn:disabled:hover {
+  background: #007AFF;
 }
 
 /* Toolbar */
