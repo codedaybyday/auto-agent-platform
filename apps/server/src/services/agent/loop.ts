@@ -57,7 +57,7 @@ export class AgentLoop extends EventEmitter {
     }
     this.config = {
       baseURL: config.baseURL,
-      maxIterations: config.maxIterations || 30,
+      maxIterations: config.maxIterations || 15,
       model: config.model || 'gpt-4',
       systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
     }
@@ -187,27 +187,33 @@ export class AgentLoop extends EventEmitter {
           for (const toolCall of llmResponse.toolCalls) {
             log.debug('AgentLoop', `执行工具: ${toolCall.name}`, toolCall)
 
+            // 自动修复常见 LLM 参数错误（不消耗轮次）
+            const correctedCall = autoCorrectToolArgs(toolCall)
+            if (correctedCall !== toolCall) {
+              log.info('AgentLoop', `🔧 自动修正 ${toolCall.name} 参数: ${JSON.stringify(toolCall.arguments)} → ${JSON.stringify(correctedCall.arguments)}`)
+            }
+
             // 通知前端工具开始执行
             this.emit('tool_start', {
-              toolCall,
+              toolCall: correctedCall,
               timestamp: Date.now(),
               stepIndex: this.state.iteration,
-              description: buildToolStepDescription(toolCall.name, toolCall.arguments)
+              description: buildToolStepDescription(correctedCall.name, correctedCall.arguments)
             })
 
             // 执行工具（可能走 WebSocket 到客户端）
-            const result = await this.executeTool(toolCall)
-            log.perf('AgentLoop', `工具 ${toolCall.name}`, result.executionTime || 0)
+            const result = await this.executeTool(correctedCall)
+            log.perf('AgentLoop', `工具 ${correctedCall.name}`, result.executionTime || 0)
 
             // 添加工具结果到上下文（Observation）
-            this.addToolResult(toolCall, result)
+            this.addToolResult(correctedCall, result)
 
             // 记录到循环检测器
-            this.loopGuard.recordCall(toolCall, result)
+            this.loopGuard.recordCall(correctedCall, result)
 
             // 通知前端工具执行完成
             this.emit('tool_end', {
-              toolCall,
+              toolCall: correctedCall,
               result,
               timestamp: Date.now(),
               stepIndex: this.state.iteration
@@ -786,6 +792,49 @@ function extractStepDescription(content: string): string {
 /**
  * 根据工具名和参数构建步骤描述
  */
+/**
+ * 自动修正 LLM 常见参数错误（URL 拼写、缺失参数等）
+ * 不消耗 Agent Loop 轮次，直接修正后执行
+ */
+function autoCorrectToolArgs(toolCall: import('../../types/index.js').ToolCall): import('../../types/index.js').ToolCall {
+  const args = { ...toolCall.arguments }
+  let changed = false
+
+  // 浏览器导航：修复常见 URL 错误
+  if (toolCall.name === 'browser_navigate' && typeof args.url === 'string') {
+    let url = args.url
+
+    // 修复1: 缺失协议 → 补充 https://
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://' + url
+      changed = true
+    }
+
+    // 修复2: 常见域名拼写错误
+    url = url.replace(/baidu\.comboard/gi, 'baidu.com/board')
+    url = url.replace(/top\.ba\.com/gi, 'top.baidu.com')
+    url = url.replace(/top\.baidu\b(?!\.com)/gi, 'top.baidu.com') // top.baidu → top.baidu.com
+    url = url.replace(/wwwidu\.com/gi, 'baidu.com') // wwwidu.com → baidu.com
+
+    if (url !== args.url) {
+      args.url = url
+      changed = true
+    }
+  }
+
+  // bash: 修复常见命令错误
+  if (toolCall.name === 'bash' && typeof args.command === 'string') {
+    // 修复: -la ~/ → ls -la ~/ （缺少 ls）
+    const cmd = args.command.trim()
+    if (/^-la\b/.test(cmd) && !cmd.startsWith('ls')) {
+      args.command = 'ls ' + cmd
+      changed = true
+    }
+  }
+
+  return changed ? { ...toolCall, arguments: args } : toolCall
+}
+
 function buildToolStepDescription(toolName: string, args?: Record<string, any>): string {
   const actionMap: Record<string, string> = {
     'browser_navigate': '正在打开网页',

@@ -14,14 +14,31 @@ import { log } from '@auto-agent/shared-utils'
  *   "key"number  → "key":number  （缺少冒号，数字值）
  */
 function tryFixJSON(raw: string): string {
+  let fixed = raw
+
   // 修复1: "key""value" → "key":"value" （两个字符串相邻，缺少冒号）
-  let fixed = raw.replace(/"([^"]+)"\s*"([^"]+)"/g, '"$1":"$2"')
+  fixed = fixed.replace(/"([^"]+)"\s*"([^"]+)"/g, '"$1":"$2"')
 
   // 修复2: "key"数字 → "key":数字 （字符串后紧跟数字，缺少冒号）
   fixed = fixed.replace(/"(\w+)"(\d)/g, '"$1":$2')
 
   // 修复3: "key"true/false → "key":true/false
   fixed = fixed.replace(/"(\w+)"(true|false)/g, '"$1":$2')
+
+  // 修复4: 未闭合的字符串值 — 如 "url": "https://example.com} → 补上双引号
+  fixed = fixed.replace(/:\s*"([^"]*?)\}(?!")/g, ':"$1"}')  // url} → url"}
+  fixed = fixed.replace(/:\s*"([^"]*?)\](?!")/g, ':"$1"]')  // url] → url"]
+
+  // 修复5: 末尾缺少 } 的情况 — 尝试智能补全
+  if (!fixed.trim().endsWith('}') && fixed.includes('{')) {
+    // 如果最后一个字符是字母数字，补上 "}
+    if (/[a-zA-Z0-9]$/.test(fixed.trim())) {
+      fixed = fixed.trimEnd() + '"}'
+    }
+  }
+
+  // 修复6: 多余逗号处理 — {... ,} → {...}
+  fixed = fixed.replace(/,(\s*})/g, '$1')
 
   return fixed
 }
