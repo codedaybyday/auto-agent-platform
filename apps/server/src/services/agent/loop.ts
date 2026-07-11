@@ -57,7 +57,7 @@ export class AgentLoop extends EventEmitter {
     }
     this.config = {
       baseURL: config.baseURL,
-      maxIterations: config.maxIterations || 10,
+      maxIterations: config.maxIterations || 30,
       model: config.model || 'gpt-4',
       systemPrompt: config.systemPrompt || this.getDefaultSystemPrompt()
     }
