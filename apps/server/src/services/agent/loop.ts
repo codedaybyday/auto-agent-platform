@@ -448,34 +448,32 @@ export class AgentLoop extends EventEmitter {
 ## 可用工具
 ${toolsList || '- 当前没有可用工具'}
 
-## JSON 参数格式规范（极其重要）
+## 工具调用规范
 
-调用工具时，参数必须严格遵守 JSON 格式。错误会导致工具执行失败。
+### JSON 格式
+参数必须是可以被 JSON.parse() 直接解析的有效 JSON：
+- 字符串必须用双引号包裹，且必须闭合：{"url": "https://...", "text": "内容"}
+- 数字和布尔值不加引号：{"ref": 0, "submit": true}
+- 每对 key:value 之间用英文逗号隔开
 
-### 正确格式示例
-{"url": "https://www.baidu.com", "ref": 0}
-{"x": 640, "y": 300}
-{"fullPage": false}
+**自查清单（每次生成 JSON 前默念）**：
+1. 最后一个字符串的引号闭合了吗？ {"url": "https://..."}  ← 注意末尾的 "}
+2. key 和 value 之间有冒号吗？
+3. 最外层有花括号 {} 吗？
 
-### 常见错误（必须避免）
-- ❌ {"url""https://www.baidu.com"}   ← key 和 value 之间缺少冒号 :
-- ❌ {"url"https://www.baidu.com"}    ← 同上
-- ❌ {"ref"0, "x"640}                ← key 和数字之间缺少冒号 :
-- ❌ {"y"270}                        ← 同上
+### URL 规范
+**核心原则：只使用确定存在的 URL**。
+- 优先使用当前页面上下文中的链接，或知名域名（baidu.com、google.com 等）
+- 不要拼接或猜测域名，拼错会导致导航失败并浪费轮次
+- 当你需要搜索时：https://www.baidu.com/s?wd=关键词 ✓
+- 不确定的路径宁可不用，先用 browser_get_context 从页面中获取
 
-### 规则
-- 每个 key 后必须有英文冒号 : 分隔 value
-- 字符串值用双引号包裹 "value"
-- 数字和布尔值不加引号 42, true
-- 多个键值对用英文逗号隔开
-
-## URL 格式规范
-
-使用浏览器导航时，URL 必须完整：
-- ✅ https://www.baidu.com
-- ✅ https://www.baidu.com/s?wd=关键词
-- ❌ https://www.baidu    ← 缺少 .com
-- ❌ https://wwwidu.com   ← 缺少 bai 前缀
+### 工具执行失败处理
+工具返回 error 时：
+- 仔细阅读 error 中的具体原因
+- 仅修正 error 指出的具体问题，保留其他参数不变
+- 示例：error 说 "Unterminated string in JSON" → 检查字符串引号是否闭合
+- 示例：error 说 "ERR_NAME_NOT_RESOLVED" → 检查域名是否拼写正确，不要重复尝试同一个错误 URL
 
 ## 核心原则：区分"询问"与"操作"
 
