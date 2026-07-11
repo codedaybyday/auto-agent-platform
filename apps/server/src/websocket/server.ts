@@ -302,7 +302,7 @@ export class WebSocketGateway {
           break
 
         case 'schedule.list':
-          this.handleScheduleList(connection)
+          this.handleScheduleList(connection, message)
           break
 
         case 'schedule.create':
@@ -515,7 +515,7 @@ export class WebSocketGateway {
 
   // ==================== 定时任务处理 ====================
 
-  private handleScheduleList(connection: WSConnection): void {
+  private handleScheduleList(connection: WSConnection, message: WSMessage): void {
     const schedules = scheduleStorage.getUserSchedules(connection.userId)
     const withDesc = schedules.map(s => ({
       ...s,
@@ -523,7 +523,7 @@ export class WebSocketGateway {
     }))
     this.sendToConnection(connection.id, {
       type: 'schedule.list' as MessageType,
-      messageId: this.generateId(),
+      messageId: message.messageId,
       timestamp: Date.now(),
       payload: { schedules: withDesc }
     })
