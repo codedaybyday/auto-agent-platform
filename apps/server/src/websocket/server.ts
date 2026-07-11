@@ -533,6 +533,7 @@ export class WebSocketGateway {
     connection.subscriptions.add(sessionId)
     this.eventBus.registerSession(sessionId, userId)
     this.eventBus.bindAgentLoop(agentLoop, sessionId)
+    mcpHub.bindWebSocket(sessionId, userId, connection)  // MCP 工具初始化需要
 
     console.log(`[WebSocket] Scheduler bound session ${sessionId} to user ${userId} connection ${connId}`)
     return true
