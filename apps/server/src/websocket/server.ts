@@ -529,6 +529,9 @@ export class WebSocketGateway {
     const connection = this.connections.get(connId)
     if (!connection) return false
 
+    // 强制设置 isAlive = true，避免 heartbeat 竞态导致调度器误判断连
+    connection.isAlive = true
+
     agentLoop.bindWebSocket(connection)
     connection.subscriptions.add(sessionId)
     this.eventBus.registerSession(sessionId, userId)

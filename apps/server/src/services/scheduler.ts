@@ -97,10 +97,17 @@ class Scheduler {
       throw new Error(`Failed to get AgentLoop for session ${session.id}`)
     }
 
-    // 3. 绑定用户的 WebSocket 连接（AgentLoop 需要 WS 才能初始化 MCP 工具）
+    // 3. 绑定用户的 WebSocket 连接
     const bound = wsGateway.bindSessionForScheduler(session.id, schedule.userId, agentLoop)
     if (!bound) {
-      console.warn(`[Scheduler] No active WebSocket for user ${schedule.userId}, agent will run without tools`)
+      // 无活跃用户连接时跳过本次执行，等待下次调度（不更新执行记录，避免丢失这次触发机会）
+      console.warn(`[Scheduler] No active WebSocket for user ${schedule.userId}, skipping execution. Will retry at next cycle.`)
+      // 清理已创建的 session
+      await sessionManager.deleteSession(session.id)
+      // 将 nextRunAt 设为 30s 后，快速重试
+      const retryAt = now + 30_000
+      scheduleStorage.recordRun(schedule.id, schedule.lastRunAt || now, retryAt, schedule.sessionId || '')
+      return
     }
 
     // 4. 计算下次执行时间
