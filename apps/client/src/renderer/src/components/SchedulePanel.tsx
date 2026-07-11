@@ -38,6 +38,7 @@ export function SchedulePanel(): JSX.Element {
   const [formName, setFormName] = useState('')
   const [formInstruction, setFormInstruction] = useState('')
   const [formCron, setFormCron] = useState('0 9 * * *')
+  const [formError, setFormError] = useState('')
 
   const loadSchedules = async () => {
     setLoading(true)
@@ -61,16 +62,24 @@ export function SchedulePanel(): JSX.Element {
   }
 
   const handleSave = async () => {
-    if (!formName.trim() || !formInstruction.trim()) return
+    if (!formName.trim()) { setFormError('请输入任务名称'); return }
+    if (!formInstruction.trim()) { setFormError('请输入 Agent 指令'); return }
+    if (!formCron.trim()) { setFormError('请选择或输入执行时间'); return }
+    setFormError('')
+
     const data = { name: formName.trim(), instruction: formInstruction.trim(), cronExpr: formCron }
 
-    if (editId) {
-      await window.api.agent.updateSchedule({ id: editId, ...data })
-    } else {
-      await window.api.agent.createSchedule(data)
+    try {
+      if (editId) {
+        await window.api.agent.updateSchedule({ id: editId, ...data })
+      } else {
+        await window.api.agent.createSchedule(data)
+      }
+      resetForm()
+      loadSchedules()
+    } catch (err: any) {
+      setFormError(err?.message || '保存失败，请重试')
     }
-    resetForm()
-    loadSchedules()
   }
 
   const handleEdit = (s: ScheduleItem) => {
@@ -99,9 +108,6 @@ export function SchedulePanel(): JSX.Element {
           <h3>⚡ 定时任务</h3>
           <p className="schedule-desc">创建定时自动执行的任务，Agent 会在指定时间自动运行</p>
         </div>
-        <button className="schedule-add-btn" onClick={() => { resetForm(); setShowForm(true) }}>
-          + 新建定时任务
-        </button>
       </div>
 
       {showForm && (
@@ -113,14 +119,14 @@ export function SchedulePanel(): JSX.Element {
             <input
               type="text"
               value={formName}
-              onChange={e => setFormName(e.target.value)}
+              onChange={e => { setFormName(e.target.value); setFormError('') }}
               placeholder="如：每日新闻摘要"
             />
 
             <label>Agent 指令</label>
             <textarea
               value={formInstruction}
-              onChange={e => setFormInstruction(e.target.value)}
+              onChange={e => { setFormInstruction(e.target.value); setFormError('') }}
               placeholder="输入 Agent 要执行的指令，如：打开百度搜索今日热点并总结"
               rows={3}
             />
@@ -130,6 +136,7 @@ export function SchedulePanel(): JSX.Element {
               {PRESETS.map(p => (
                 <button
                   key={p.expr}
+                  type="button"
                   className={`preset-btn ${formCron === p.expr ? 'active' : ''}`}
                   onClick={() => setFormCron(p.expr)}
                 >
@@ -145,15 +152,24 @@ export function SchedulePanel(): JSX.Element {
               placeholder="或输入 cron: 分 时 日 月 周"
             />
 
+            {formError && <div className="schedule-form-error">{formError}</div>}
+
             <div className="schedule-form-actions">
               <button className="cancel-btn" onClick={resetForm}>取消</button>
-              <button className="save-btn" onClick={handleSave} disabled={!formName.trim() || !formInstruction.trim()}>
+              <button className="save-btn" onClick={handleSave}>
                 {editId ? '保存' : '创建'}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* 新建按钮放在列表上方 */}
+      <div className="schedule-toolbar">
+        <button className="schedule-add-btn" onClick={() => { resetForm(); setShowForm(true) }}>
+          + 新建定时任务
+        </button>
+      </div>
 
       <div className="schedule-list">
         {loading ? (
