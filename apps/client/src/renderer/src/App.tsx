@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { ChatPanel } from './components/ChatPanel'
 import { SettingsPanel } from './components/SettingsPanel'
+import { SchedulePanel } from './components/SchedulePanel'
 import { SessionPanel } from './components/SessionPanel'
 import type { Session } from './components/SessionPanel'
 import type { StepInfo } from './components/StepPanel'
@@ -153,7 +154,7 @@ function filterAndExtractSteps(allMessages: Message[]): { chatMessages: Message[
 }
 
 function App(): JSX.Element {
-  const [view, setView] = useState<'chat' | 'settings'>('chat')
+  const [view, setView] = useState<'chat' | 'settings' | 'schedule'>('chat')
   const [messages, setMessages] = useState<Message[]>([])
   const [userInfo, setUserInfo] = useState<any>(null)
   const [processingMap, setProcessingMap] = useState<Map<string, boolean>>(new Map())
@@ -671,6 +672,15 @@ function App(): JSX.Element {
 
         {/* 底部操作栏 */}
         <div className="sidebar-footer">
+          {/* 定时任务按钮 */}
+          <button
+            className={`footer-btn ${view === 'schedule' ? 'active' : ''}`}
+            onClick={() => setView(view === 'schedule' ? 'chat' : 'schedule')}
+          >
+            <span className="btn-icon">⏰</span>
+            <span className="btn-text">定时任务</span>
+          </button>
+
           {/* 设置按钮 */}
           <button
             className={`footer-btn ${view === 'settings' ? 'active' : ''}`}
@@ -732,6 +742,8 @@ function App(): JSX.Element {
             onClearHistory={handleClearHistory}
             onStop={handleStop}
           />
+        ) : view === 'schedule' ? (
+          <SchedulePanel />
         ) : (
           <SettingsPanel isConnected={isConnected} />
         )}

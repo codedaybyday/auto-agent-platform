@@ -89,6 +89,12 @@ export interface AgentAPI {
   saveMCPConfig: (config: MCPUserConfig) => Promise<{ success: boolean; error?: string }>
   /** 保存代码到文件 */
   saveCodeToFile: (filename: string, content: string) => Promise<{ success: boolean; error?: string }>
+  /** 定时任务 */
+  getSchedules: () => Promise<{ success: boolean; schedules?: any[]; error?: string }>
+  createSchedule: (data: { name: string; instruction: string; cronExpr: string }) => Promise<{ success: boolean; schedule?: any; error?: string }>
+  updateSchedule: (data: { id: string; name?: string; instruction?: string; cronExpr?: string }) => Promise<{ success: boolean; schedule?: any; error?: string }>
+  deleteSchedule: (id: string) => Promise<{ success: boolean; error?: string }>
+  toggleSchedule: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>
 }
 
 /**
@@ -196,7 +202,13 @@ const agentAPI: AgentAPI = {
   getMCPConfig: () => ipcRenderer.invoke('mcp:get_config'),
   saveMCPConfig: (config: MCPUserConfig) => ipcRenderer.invoke('mcp:save_config', config),
   // file
-  saveCodeToFile: (filename: string, content: string) => ipcRenderer.invoke('file:save_code', filename, content)
+  saveCodeToFile: (filename: string, content: string) => ipcRenderer.invoke('file:save_code', filename, content),
+  // schedule
+  getSchedules: () => ipcRenderer.invoke('schedule:list'),
+  createSchedule: (data) => ipcRenderer.invoke('schedule:create', data),
+  updateSchedule: (data) => ipcRenderer.invoke('schedule:update', data),
+  deleteSchedule: (id: string) => ipcRenderer.invoke('schedule:delete', id),
+  toggleSchedule: (id: string, enabled: boolean) => ipcRenderer.invoke('schedule:toggle', id, enabled)
 }
 
 const api = {

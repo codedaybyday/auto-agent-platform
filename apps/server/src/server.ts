@@ -9,6 +9,8 @@ import { WebSocketGateway } from './websocket/server.js'
 import { SessionManager } from './services/agent/session.js'
 import { rateLimiter } from './services/rate-limiter.js'
 import { log } from '@auto-agent/shared-utils'
+import { scheduleStorage } from './services/schedule-storage.js'
+import { scheduler } from './services/scheduler.js'
 
 export interface ServerContext {
   instanceId: string
@@ -46,6 +48,17 @@ export function startServer(): ServerContext {
   // 将 Express 应用绑定到 server
   server.on('request', app)
 
+  // 初始化定时任务存储
+  scheduleStorage.init()
+
+  // 启动定时任务调度器
+  scheduler.start({
+    sessionManager,
+    onScheduleExecuted: (schedule, sessionId) => {
+      log.info('Scheduler', `Schedule "${schedule.name}" executed, session=${sessionId}`)
+    }
+  })
+
   // 启动限流器清理任务（每5分钟清理过期桶）
   setInterval(() => {
     rateLimiter.cleanup()
@@ -74,6 +87,7 @@ export function startServer(): ServerContext {
   // 优雅关闭
   const gracefulShutdown = (signal: string) => {
     log.info('Server', `${signal} received, shutting down gracefully`)
+    scheduler.stop()
     server.close(() => {
       log.info('Server', 'Server closed')
       process.exit(0)

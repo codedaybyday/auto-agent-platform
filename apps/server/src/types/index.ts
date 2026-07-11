@@ -125,7 +125,14 @@ export enum MessageType {
   MCP_LIST_TOOLS = 'mcp.listTools',
   MCP_CALL_TOOL = 'mcp.callTool',
   MCP_RESPONSE = 'mcp.response',
-  MCP_ERROR = 'mcp.error'
+  MCP_ERROR = 'mcp.error',
+
+  // 定时任务
+  SCHEDULE_LIST = 'schedule.list',
+  SCHEDULE_CREATE = 'schedule.create',
+  SCHEDULE_UPDATE = 'schedule.update',
+  SCHEDULE_DELETE = 'schedule.delete',
+  SCHEDULE_TOGGLE = 'schedule.toggle'
 }
 
 export interface WSMessage {
@@ -134,6 +141,22 @@ export interface WSMessage {
   timestamp: number
   sessionId?: string
   payload?: any
+}
+
+// ==================== 定时任务类型 ====================
+
+export interface Schedule {
+  id: string
+  userId: string
+  name: string
+  instruction: string
+  cronExpr: string       // 5段式: "0 9 * * *"
+  enabled: boolean
+  lastRunAt?: number     // 上次执行时间戳
+  nextRunAt: number      // 下次执行时间戳
+  sessionId?: string     // 最近一次执行的 session ID
+  createdAt: number
+  updatedAt: number
 }
 
 // ==================== 会话类型 ====================

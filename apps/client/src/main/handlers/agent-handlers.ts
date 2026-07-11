@@ -321,4 +321,91 @@ export function setupAgentHandlers(mainWindow: BrowserWindow | null): void {
       }
     }
   })
+
+  // ==================== 定时任务 ====================
+
+  ipcMain.handle('schedule:list', async () => {
+    return new Promise((resolve) => {
+      const handler = (msg: any) => {
+        if (msg.type === 'schedule.list') {
+          ws?.removeListener('message', handlerWrapper)
+          resolve({ success: true, schedules: msg.payload?.schedules || [] })
+        }
+      }
+      const handlerWrapper = (data: Buffer) => {
+        try { handler(JSON.parse(data.toString())) } catch {}
+      }
+      ws?.on('message', handlerWrapper)
+      ws?.send(JSON.stringify({ type: 'schedule.list', messageId: generateId(), timestamp: Date.now() }))
+      setTimeout(() => resolve({ success: false, error: '获取定时任务超时' }), 10000)
+    })
+  })
+
+  ipcMain.handle('schedule:create', async (_event, data) => {
+    return new Promise((resolve) => {
+      const handler = (msg: any) => {
+        if (msg.type === 'schedule.create') {
+          ws?.removeListener('message', handlerWrapper)
+          resolve(msg.payload || { success: false, error: '创建失败' })
+        }
+      }
+      const handlerWrapper = (data: Buffer) => {
+        try { handler(JSON.parse(data.toString())) } catch {}
+      }
+      ws?.on('message', handlerWrapper)
+      ws?.send(JSON.stringify({ type: 'schedule.create', messageId: generateId(), timestamp: Date.now(), payload: data }))
+      setTimeout(() => resolve({ success: false, error: '创建定时任务超时' }), 10000)
+    })
+  })
+
+  ipcMain.handle('schedule:update', async (_event, data) => {
+    return new Promise((resolve) => {
+      const handler = (msg: any) => {
+        if (msg.type === 'schedule.update') {
+          ws?.removeListener('message', handlerWrapper)
+          resolve(msg.payload || { success: false, error: '更新失败' })
+        }
+      }
+      const handlerWrapper = (data: Buffer) => {
+        try { handler(JSON.parse(data.toString())) } catch {}
+      }
+      ws?.on('message', handlerWrapper)
+      ws?.send(JSON.stringify({ type: 'schedule.update', messageId: generateId(), timestamp: Date.now(), payload: data }))
+      setTimeout(() => resolve({ success: false, error: '更新定时任务超时' }), 10000)
+    })
+  })
+
+  ipcMain.handle('schedule:delete', async (_event, id: string) => {
+    return new Promise((resolve) => {
+      const handler = (msg: any) => {
+        if (msg.type === 'schedule.delete') {
+          ws?.removeListener('message', handlerWrapper)
+          resolve(msg.payload || { success: false, error: '删除失败' })
+        }
+      }
+      const handlerWrapper = (data: Buffer) => {
+        try { handler(JSON.parse(data.toString())) } catch {}
+      }
+      ws?.on('message', handlerWrapper)
+      ws?.send(JSON.stringify({ type: 'schedule.delete', messageId: generateId(), timestamp: Date.now(), payload: { id } }))
+      setTimeout(() => resolve({ success: false, error: '删除超时' }), 10000)
+    })
+  })
+
+  ipcMain.handle('schedule:toggle', async (_event, id: string, enabled: boolean) => {
+    return new Promise((resolve) => {
+      const handler = (msg: any) => {
+        if (msg.type === 'schedule.toggle') {
+          ws?.removeListener('message', handlerWrapper)
+          resolve(msg.payload || { success: false, error: '操作失败' })
+        }
+      }
+      const handlerWrapper = (data: Buffer) => {
+        try { handler(JSON.parse(data.toString())) } catch {}
+      }
+      ws?.on('message', handlerWrapper)
+      ws?.send(JSON.stringify({ type: 'schedule.toggle', messageId: generateId(), timestamp: Date.now(), payload: { id, enabled } }))
+      setTimeout(() => resolve({ success: false, error: '操作超时' }), 10000)
+    })
+  })
 }

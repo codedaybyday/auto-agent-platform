@@ -11,6 +11,8 @@ import { EventBus } from './event-bus.js'
 import { RateLimiter } from '../services/rate-limiter.js'
 import { mcpHub } from '../services/mcp/hub.js'
 import { log } from '@auto-agent/shared-utils'
+import { scheduleStorage } from '../services/schedule-storage.js'
+import { describeCron, calcNextRunAt } from '../services/scheduler.js'
 
 export class WebSocketGateway {
   private wss: WebSocketServer
@@ -299,6 +301,26 @@ export class WebSocketGateway {
           this.handleMCPError(connection, message)
           break
 
+        case 'schedule.list':
+          this.handleScheduleList(connection)
+          break
+
+        case 'schedule.create':
+          this.handleScheduleCreate(connection, message)
+          break
+
+        case 'schedule.update':
+          this.handleScheduleUpdate(connection, message)
+          break
+
+        case 'schedule.delete':
+          this.handleScheduleDelete(connection, message)
+          break
+
+        case 'schedule.toggle':
+          this.handleScheduleToggle(connection, message)
+          break
+
         case 'ping':
           this.sendToConnection(connection.id, {
             type: 'pong' as MessageType,
@@ -489,6 +511,109 @@ export class WebSocketGateway {
     if (agentLoop) {
       agentLoop.stop()
     }
+  }
+
+  // ==================== 定时任务处理 ====================
+
+  private handleScheduleList(connection: WSConnection): void {
+    const schedules = scheduleStorage.getUserSchedules(connection.userId)
+    const withDesc = schedules.map(s => ({
+      ...s,
+      description: describeCron(s.cronExpr)
+    }))
+    this.sendToConnection(connection.id, {
+      type: 'schedule.list' as MessageType,
+      messageId: this.generateId(),
+      timestamp: Date.now(),
+      payload: { schedules: withDesc }
+    })
+  }
+
+  private handleScheduleCreate(connection: WSConnection, message: WSMessage): void {
+    const { name, instruction, cronExpr } = message.payload || {}
+    if (!name || !instruction || !cronExpr) {
+      this.sendToConnection(connection.id, {
+        type: 'schedule.create' as MessageType,
+        messageId: message.messageId,
+        timestamp: Date.now(),
+        payload: { success: false, error: '缺少必填字段: name, instruction, cronExpr' }
+      })
+      return
+    }
+
+    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const now = Date.now()
+    const nextRunAt = calcNextRunAt(cronExpr, now)
+
+    const schedule = {
+      id, userId: connection.userId, name, instruction,
+      cronExpr, enabled: true,
+      nextRunAt, createdAt: now, updatedAt: now
+    }
+
+    scheduleStorage.createSchedule(schedule)
+    this.sendToConnection(connection.id, {
+      type: 'schedule.create' as MessageType,
+      messageId: message.messageId,
+      timestamp: Date.now(),
+      payload: { success: true, schedule: { ...schedule, description: describeCron(cronExpr) } }
+    })
+  }
+
+  private handleScheduleUpdate(connection: WSConnection, message: WSMessage): void {
+    const { id, name, instruction, cronExpr } = message.payload || {}
+    if (!id) return
+
+    const schedules = scheduleStorage.getUserSchedules(connection.userId)
+    const existing = schedules.find(s => s.id === id)
+    if (!existing) {
+      this.sendToConnection(connection.id, {
+        type: 'schedule.update' as MessageType,
+        messageId: message.messageId,
+        timestamp: Date.now(),
+        payload: { success: false, error: '任务不存在' }
+      })
+      return
+    }
+
+    const updated = {
+      ...existing,
+      name: name || existing.name,
+      instruction: instruction || existing.instruction,
+      cronExpr: cronExpr || existing.cronExpr,
+      nextRunAt: cronExpr ? calcNextRunAt(cronExpr) : existing.nextRunAt,
+      updatedAt: Date.now()
+    }
+
+    scheduleStorage.updateSchedule(updated)
+    this.sendToConnection(connection.id, {
+      type: 'schedule.update' as MessageType,
+      messageId: message.messageId,
+      timestamp: Date.now(),
+      payload: { success: true, schedule: { ...updated, description: describeCron(updated.cronExpr) } }
+    })
+  }
+
+  private handleScheduleDelete(connection: WSConnection, message: WSMessage): void {
+    const { id } = message.payload || {}
+    const ok = scheduleStorage.deleteSchedule(id)
+    this.sendToConnection(connection.id, {
+      type: 'schedule.delete' as MessageType,
+      messageId: message.messageId,
+      timestamp: Date.now(),
+      payload: { success: ok, error: ok ? undefined : '任务不存在' }
+    })
+  }
+
+  private handleScheduleToggle(connection: WSConnection, message: WSMessage): void {
+    const { id, enabled } = message.payload || {}
+    const ok = scheduleStorage.toggleSchedule(id, enabled)
+    this.sendToConnection(connection.id, {
+      type: 'schedule.toggle' as MessageType,
+      messageId: message.messageId,
+      timestamp: Date.now(),
+      payload: { success: ok, error: ok ? undefined : '任务不存在' }
+    })
   }
 
   /**

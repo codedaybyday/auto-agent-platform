@@ -88,6 +88,13 @@ export interface AgentAPI {
   saveMCPConfig: (config: MCPUserConfig) => Promise<{ success: boolean; error?: string }>
   /** 保存代码到文件 */
   saveCodeToFile: (filename: string, content: string) => Promise<{ success: boolean; error?: string }>
+  /** 定时任务 */
+  getSchedules: () => Promise<{ success: boolean; schedules?: any[]; error?: string }>
+  createSchedule: (data: { name: string; instruction: string; cronExpr: string }) => Promise<{ success: boolean; schedule?: any; error?: string }>
+  updateSchedule: (data: { id: string; name?: string; instruction?: string; cronExpr?: string }) => Promise<{ success: boolean; schedule?: any; error?: string }>
+  deleteSchedule: (id: string) => Promise<{ success: boolean; error?: string }>
+  toggleSchedule: (id: string, enabled: boolean) => Promise<{ success: boolean; error?: string }>
+  onScheduleExecuted?: (callback: (data: any) => void) => () => void
 }
 
 declare global {
