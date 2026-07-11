@@ -20,6 +20,8 @@ class Scheduler {
   private deps: SchedulerDeps | null = null
   private intervalId: ReturnType<typeof setInterval> | null = null
   private running = false
+  // 防止同一任务并行执行
+  private executingSchedules = new Set<string>()
 
   /** 启动调度器 */
   start(deps: SchedulerDeps): void {
@@ -67,11 +69,19 @@ class Scheduler {
 
     for (const schedule of schedules) {
       if (schedule.nextRunAt <= now) {
+        // 防止同一任务并行执行（上一次可能因 LLM 耗时过长还在运行）
+        if (this.executingSchedules.has(schedule.id)) {
+          console.log(`[Scheduler] Schedule "${schedule.name}" is still running, skipping this cycle`)
+          continue
+        }
         try {
+          this.executingSchedules.add(schedule.id)
           await this.executeSchedule(schedule)
           executedCount++
         } catch (err) {
           console.error(`[Scheduler] Failed to execute schedule ${schedule.name}:`, err)
+        } finally {
+          this.executingSchedules.delete(schedule.id)
         }
       }
     }
